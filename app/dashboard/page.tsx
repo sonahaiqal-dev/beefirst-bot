@@ -7,10 +7,14 @@ export default function Dashboard() {
   const [user, setUser] = useState<any>(null)
   const [profile, setProfile] = useState<any>(null)
   
-  // State form
+  // State Form
   const [token, setToken] = useState('')
   const [prompt, setPrompt] = useState('')
-  const [knowledge, setKnowledge] = useState('') // <-- State baru
+  
+  // State Knowledge Base (3 Kolom)
+  const [products, setProducts] = useState('')
+  const [hours, setHours] = useState('')
+  const [faq, setFaq] = useState('')
   
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -19,27 +23,25 @@ export default function Dashboard() {
   useEffect(() => {
     const getData = async () => {
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        router.push('/login')
-        return
-      }
+      if (!user) { router.push('/login'); return }
       setUser(user)
 
-      const { data: profilData } = await supabase
+      const { data } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
         .single()
 
-      if (profilData) {
-        setProfile(profilData)
-        setToken(profilData.fonnte_token || '')
-        setPrompt(profilData.system_prompt || '')
-        setKnowledge(profilData.knowledge_base || '') // <-- Load data
+      if (data) {
+        setProfile(data)
+        setToken(data.fonnte_token || '')
+        setPrompt(data.system_prompt || '')
+        setProducts(data.kb_products || '')
+        setHours(data.kb_hours || '')
+        setFaq(data.kb_faq || '')
       }
       setLoading(false)
     }
-
     getData()
   }, [])
 
@@ -50,101 +52,159 @@ export default function Dashboard() {
       .update({ 
         fonnte_token: token,
         system_prompt: prompt,
-        knowledge_base: knowledge // <-- Simpan data
+        kb_products: products,
+        kb_hours: hours,
+        kb_faq: faq
       })
       .eq('id', user.id)
 
-    if (error) {
-      alert('Gagal simpan: ' + error.message)
-    } else {
-      alert('✅ Data Toko Berhasil Disimpan!')
-    }
+    if (error) alert('Gagal: ' + error.message)
+    else alert('✅ Data Berhasil Disimpan!')
+    
     setSaving(false)
   }
 
-  if (loading) return <div className="p-10 text-center text-gray-600">Sedang memuat data... ⏳</div>
+  if (loading) return <div className="min-h-screen flex items-center justify-center text-blue-600 font-medium">Memuat Data... ⏳</div>
+
+  // --- STYLE BARU (Slate & Blue Harmony) ---
+  // Teks: Slate-700 (Abu kebiruan, enak di mata)
+  // Border: Slate-200 (Tipis elegan)
+  // Focus: Ring Biru (Sesuai tema)
+  const inputStyle = "w-full border border-slate-300 bg-white text-slate-700 font-medium p-3 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition shadow-sm placeholder-slate-400"
+  const labelStyle = "block text-sm font-bold text-slate-700 mb-2"
+  const cardStyle = "bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:border-blue-200 transition duration-300"
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-4xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-800">Dashboard BeeFirst</h1>
-          <button onClick={async () => { await supabase.auth.signOut(); router.push('/login') }} className="text-red-600 font-medium hover:underline">Logout</button>
+    <div className="min-h-screen bg-slate-50 p-6 font-sans text-slate-800">
+      <div className="max-w-6xl mx-auto">
+        
+        {/* HEADER */}
+        <div className="flex flex-col md:flex-row justify-between items-center mb-10 gap-4">
+          <div>
+            <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight">BeeFirst Dashboard 🐝</h1>
+            <p className="text-slate-500 text-sm mt-1">Pusat kendali bot cerdas Anda.</p>
+          </div>
+          <button 
+            onClick={async () => { await supabase.auth.signOut(); router.push('/login') }} 
+            className="bg-white text-red-500 px-5 py-2 rounded-full text-sm font-bold border border-red-100 hover:bg-red-50 transition"
+          >
+            Keluar
+          </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* KIRI: STATUS */}
-          <div className="md:col-span-1">
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-blue-100 sticky top-6">
-              <h2 className="text-sm font-bold text-gray-400 uppercase mb-2">Status</h2>
-              <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-bold">
-                {profile?.subscription_status === 'trial' ? 'TRIAL AKTIF' : 'PREMIUM'}
-              </span>
-              <p className="mt-4 text-xs text-gray-500 break-all">{user?.email}</p>
-            </div>
-          </div>
-
-          {/* KANAN: PENGATURAN */}
-          <div className="md:col-span-2 space-y-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          
+          {/* SIDEBAR KIRI (4 Kolom) */}
+          <div className="lg:col-span-4 space-y-6">
             
-            {/* 1. KONEKSI */}
-            <div className="bg-white p-6 rounded-xl shadow-sm">
-              <h2 className="text-lg font-bold text-gray-800 mb-4">🔗 Koneksi WhatsApp</h2>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Token Fonnte</label>
+            {/* Status Card */}
+            <div className={`${cardStyle} bg-gradient-to-br from-blue-600 to-blue-800 text-white border-none`}>
+              <h2 className="text-blue-100 text-xs font-bold uppercase tracking-wider mb-1">Paket Saat Ini</h2>
+              <div className="flex items-center gap-2 mb-4">
+                <span className="text-2xl font-bold">
+                  {profile?.subscription_status === 'trial' ? 'Starter Trial' : 'Premium Pro'}
+                </span>
+                <span className="bg-blue-500 bg-opacity-30 px-2 py-0.5 rounded text-xs">Aktif</span>
+              </div>
+              <p className="text-blue-100 text-xs opacity-80 truncate">{user?.email}</p>
+            </div>
+
+            {/* Token Input */}
+            <div className={cardStyle}>
+              <label className={labelStyle}>🔑 Token Fonnte</label>
               <input 
                 type="text" 
-                className="w-full border p-3 rounded-lg font-mono text-sm bg-gray-50"
-                placeholder="Masukkan Token..."
+                className={inputStyle}
+                placeholder="Masukkan Token WA..."
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
               />
+              <p className="text-xs text-slate-400 mt-2">Wajib diisi agar bot bisa membalas.</p>
             </div>
 
-            {/* 2. KEPRIBADIAN (PROMPT) */}
-            <div className="bg-white p-6 rounded-xl shadow-sm">
-              <h2 className="text-lg font-bold text-gray-800 mb-4">🎭 Kepribadian Bot</h2>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Instruksi Perilaku</label>
-              <p className="text-xs text-gray-500 mb-2">Contoh: "Kamu adalah Admin Klinik yang ramah & sopan."</p>
+            {/* Prompt System */}
+            <div className={cardStyle}>
+              <label className={labelStyle}>🎭 Peran Bot (System Prompt)</label>
               <textarea 
-                rows={3}
-                className="w-full border p-3 rounded-lg text-sm"
+                rows={4}
+                className={inputStyle}
+                placeholder="Cth: Kamu adalah CS toko sepatu yang gaul dan suka pakai emoji..."
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
               />
             </div>
+          </div>
 
-            {/* 3. KNOWLEDGE BASE (DATA TOKO) - BARU! */}
-            <div className="bg-white p-6 rounded-xl shadow-sm border-2 border-blue-50">
-              <div className="flex items-center gap-2 mb-4">
-                <h2 className="text-lg font-bold text-blue-700">📚 Data Pengetahuan (Knowledge Base)</h2>
-                <span className="bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded font-bold">FITUR BARU</span>
+          {/* MAIN CONTENT KANAN (8 Kolom) */}
+          <div className="lg:col-span-8 space-y-6">
+            
+            {/* Knowledge Base Section */}
+            <div className={cardStyle}>
+              <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
+                <div className="bg-blue-100 p-2 rounded-lg text-blue-600">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-800">Database Pengetahuan</h2>
+                  <p className="text-slate-500 text-sm">Isi data di bawah ini agar bot Anda pintar.</p>
+                </div>
               </div>
-              
-              <label className="block text-sm font-bold text-gray-700 mb-1">Fakta & Data Toko</label>
-              <p className="text-xs text-gray-500 mb-2">
-                Copy-paste info produk, daftar harga, jam buka, atau FAQ di sini. Bot akan menjawab berdasarkan data ini.
-              </p>
-              <textarea 
-                rows={10}
-                className="w-full border border-blue-200 p-3 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                placeholder="Contoh:
-- Nasi Goreng: Rp 15.000
-- Es Teh: Rp 5.000
-- Jam Buka: 08.00 - 22.00
-- Alamat: Jl. Sudirman No 1..."
-                value={knowledge}
-                onChange={(e) => setKnowledge(e.target.value)}
-              />
+
+              <div className="space-y-6">
+                {/* 1. Produk */}
+                <div>
+                  <label className={labelStyle}>📦 Daftar Produk & Harga</label>
+                  <textarea 
+                    rows={6}
+                    className={`${inputStyle} font-mono text-xs md:text-sm`} // Font mono biar rapi kayak struk
+                    placeholder={`- Nasi Goreng: Rp 15.000\n- Es Teh: Rp 5.000\n- Paket Hemat: Rp 20.000`}
+                    value={products}
+                    onChange={(e) => setProducts(e.target.value)}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* 2. Jam Buka */}
+                  <div>
+                    <label className={labelStyle}>⏰ Jam Operasional</label>
+                    <textarea 
+                      rows={4}
+                      className={inputStyle}
+                      placeholder={`Senin-Jumat: 08.00 - 22.00\nSabtu: 10.00 - 23.00`}
+                      value={hours}
+                      onChange={(e) => setHours(e.target.value)}
+                    />
+                  </div>
+                  
+                  {/* 3. FAQ */}
+                  <div>
+                    <label className={labelStyle}>ℹ️ Info Lain / FAQ</label>
+                    <textarea 
+                      rows={4}
+                      className={inputStyle}
+                      placeholder={`Lokasi: Jl. Sudirman\nWifi: BeeFirst123`}
+                      value={faq}
+                      onChange={(e) => setFaq(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
 
-            {/* TOMBOL SAVE */}
-            <div className="flex justify-end">
+            {/* Action Bar */}
+            <div className="flex justify-end pt-4">
               <button 
                 onClick={handleSave}
                 disabled={saving}
-                className="bg-blue-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-blue-700 disabled:bg-gray-400 shadow-lg transition"
+                className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg shadow-blue-200 hover:bg-blue-700 hover:shadow-xl hover:-translate-y-1 transition disabled:bg-slate-300 disabled:shadow-none disabled:cursor-not-allowed flex items-center gap-2"
               >
-                {saving ? 'Menyimpan...' : 'Simpan Semua Perubahan 💾'}
+                {saving ? (
+                  <>Menyimpan... ⏳</>
+                ) : (
+                  <>💾 Simpan Semua Data</>
+                )}
               </button>
             </div>
 
@@ -153,4 +213,4 @@ export default function Dashboard() {
       </div>
     </div>
   )
-} 
+}

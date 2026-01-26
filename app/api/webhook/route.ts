@@ -10,7 +10,8 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PU
 const supabase = createClient(supabaseUrl, supabaseKey)
 
 // Groq AI (Pastikan API Key sudah ada di Vercel)
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
+// Tambah || "" biar gak error saat build kalau env belum kebaca
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || "" })
 
 export async function POST(request: Request) {
   try {
@@ -50,7 +51,7 @@ export async function POST(request: Request) {
             headers: { Authorization: token!, 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 target: sender,
-                message: "Mohon maaf, masa trial Bot ini sudah habis. Silakan hubungi owner untuk perpanjang."
+                message: "Mohon maaf, masa trial Bot BeeFirst Anda sudah habis. Silakan hubungi owner untuk upgrade ke Premium."
             })
         })
         return NextResponse.json({ status: 'trial_expired' })
@@ -61,43 +62,62 @@ export async function POST(request: Request) {
     // Jangan balas status WA sendiri atau pesan kosong
     if (sender === 'status' || !message) return NextResponse.json({ status: 'ignored' })
 
-    // --- 5. LOGIKA AI PINTAR (RAG LITE) ---
+    // --- 5. LOGIKA AI PINTAR (KNOWLEDGE BASE) ---
 
     console.log(`🧠 AI memproses pesan dari ${sender}...`)
 
-    // Ambil Data dari Database
+    // A. Ambil Data Kepribadian & Pengetahuan dari Database
     const customPrompt = userProfile.system_prompt || "Kamu adalah asisten AI yang ramah dan membantu."
-    const knowledgeBase = userProfile.knowledge_base || "Belum ada data toko spesifik."
+    
+    // Ambil 3 Kolom Data Toko (Default kosong jika user belum isi)
+    const productData = userProfile.kb_products || "Belum ada informasi produk."
+    const hoursData = userProfile.kb_hours || "Belum ada informasi jam buka."
+    const faqData = userProfile.kb_faq || "Belum ada informasi tambahan."
 
-    // RAKIT PROMPT GABUNGAN
-    // Ini rahasianya: Kita suruh AI baca Knowledge Base dulu sebelum jawab
+    // B. Gabungkan Data Jadi Satu Teks Rapi
+    const knowledgeContext = `
+    === DAFTAR PRODUK & HARGA ===
+    ${productData}
+
+    === JAM OPERASIONAL ===
+    ${hoursData}
+
+    === INFORMASI LAINNYA (FAQ/LOKASI/WIFI) ===
+    ${faqData}
+    `
+
+    // C. Rakit Prompt Final untuk AI
     const finalSystemPrompt = `
       PERAN & KEPRIBADIAN:
       ${customPrompt}
 
-      DATA PENGETAHUAN / FAKTA TOKO:
-      Gunakan informasi di bawah ini sebagai sumber kebenaran utama untuk menjawab pertanyaan user.
-      Jika pertanyaan user tidak ada jawabannya di data ini, jawab jujur bahwa kamu tidak tahu dan tawarkan untuk hubungi admin/owner.
-      JANGAN MENGARANG DATA HARGA ATAU STOK YANG TIDAK ADA DISINI.
+      DATA FAKTA TOKO (SUMBER KEBENARAN UTAMA):
+      Gunakan data di bawah ini untuk menjawab pertanyaan pelanggan.
+      
+      ATURAN PENTING:
+      1. Jika user tanya harga/produk, LIHAT DATA PRODUK. Jangan ngarang harga sendiri.
+      2. Jika user tanya jam buka, LIHAT DATA JAM OPERASIONAL.
+      3. Jika informasi tidak ada di data ini, jawab jujur: "Mohon maaf, untuk info tersebut saya belum tau. Silakan hubungi admin langsung ya."
+      4. Jawablah dengan singkat, ramah, dan to-the-point.
 
-      === MULAI DATA ===
-      ${knowledgeBase}
-      === AKHIR DATA ===
+      === MULAI DATA TOKO ===
+      ${knowledgeContext}
+      === AKHIR DATA TOKO ===
     `
 
-    // Panggil AI
+    // D. Panggil Groq AI (Model Terbaru)
     const chatCompletion = await groq.chat.completions.create({
       messages: [
         { role: "system", content: finalSystemPrompt },
         { role: "user", content: message }
       ],
-      model: "llama-3.3-70b-versatile",
-      temperature: 0.5, // Kita set agak rendah biar dia patuh sama data (gak halu)
+      model: "llama-3.3-70b-versatile", // Model paling pinter & cepat
+      temperature: 0.5, // 0.5 artinya seimbang (kreatif tapi patuh data)
       max_tokens: 600,
     })
 
     // Ambil jawaban dari AI
-    const aiResponse = chatCompletion.choices[0]?.message?.content || "Maaf, AI sedang gangguan sebentar."
+    const aiResponse = chatCompletion.choices[0]?.message?.content || "Maaf, AI sedang gangguan sebentar. Coba lagi nanti."
 
     // --- 6. KIRIM BALASAN KE WHATSAPP ---
     
@@ -122,6 +142,7 @@ export async function POST(request: Request) {
   }
 }
 
+// Endpoint GET buat cek status server
 export async function GET() {
   return NextResponse.json({ status: 'BeeFirst Knowledge Brain Ready 🧠📚' })
 }
