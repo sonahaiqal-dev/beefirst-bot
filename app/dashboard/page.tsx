@@ -6,14 +6,17 @@ import { useRouter } from 'next/navigation'
 export default function Dashboard() {
   const [user, setUser] = useState<any>(null)
   const [profile, setProfile] = useState<any>(null)
+  
+  // State untuk form
   const [token, setToken] = useState('')
+  const [prompt, setPrompt] = useState('')
+  
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
     const getData = async () => {
-      // 1. Cek User Login
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) {
         router.push('/login')
@@ -21,8 +24,7 @@ export default function Dashboard() {
       }
       setUser(user)
 
-      // 2. Ambil Data Profil (Status Trial & Token)
-      const { data: profilData, error } = await supabase
+      const { data: profilData } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
@@ -30,7 +32,9 @@ export default function Dashboard() {
 
       if (profilData) {
         setProfile(profilData)
-        setToken(profilData.fonnte_token || '') // Isi token kalau sudah ada sebelumnya
+        setToken(profilData.fonnte_token || '')
+        // Ambil prompt dari database, atau pakai default kalau kosong
+        setPrompt(profilData.system_prompt || 'Kamu adalah asisten AI yang ramah dan membantu.')
       }
       setLoading(false)
     }
@@ -38,28 +42,23 @@ export default function Dashboard() {
     getData()
   }, [])
 
-  // Fungsi Simpan Token Fonnte
-  const handleSaveToken = async () => {
+  // Fungsi Simpan Pengaturan (Token & Prompt sekaligus)
+  const handleSave = async () => {
     setSaving(true)
     const { error } = await supabase
       .from('profiles')
-      .update({ fonnte_token: token })
+      .update({ 
+        fonnte_token: token,
+        system_prompt: prompt 
+      })
       .eq('id', user.id)
 
     if (error) {
       alert('Gagal simpan: ' + error.message)
     } else {
-      alert('✅ Token Berhasil Disimpan!')
+      alert('✅ Pengaturan Berhasil Disimpan!')
     }
     setSaving(false)
-  }
-
-  // Hitung Sisa Hari Trial
-  const hitungSisaHari = (tglBerakhir: string) => {
-    const end = new Date(tglBerakhir).getTime()
-    const now = new Date().getTime()
-    const sisa = Math.ceil((end - now) / (1000 * 60 * 60 * 24))
-    return sisa > 0 ? sisa + ' Hari Lagi' : 'Sudah Habis'
   }
 
   if (loading) return <div className="p-10 text-center text-gray-600">Sedang memuat data bos... ⏳</div>
@@ -84,11 +83,10 @@ export default function Dashboard() {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           
-          {/* KARTU 1: STATUS LANGGANAN */}
-          <div className="md:col-span-1">
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-blue-100 h-full">
+          {/* KARTU KIRI: STATUS */}
+          <div className="md:col-span-1 space-y-6">
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-blue-100">
               <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">Status Akun</h2>
-              
               <div className="mb-4">
                 <span className={`px-3 py-1 rounded-full text-sm font-bold ${
                   profile?.subscription_status === 'trial' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
@@ -96,67 +94,61 @@ export default function Dashboard() {
                   {profile?.subscription_status === 'trial' ? 'TRIAL AKTIF' : profile?.subscription_status}
                 </span>
               </div>
-
-              {profile?.trial_ends_at && (
-                <div>
-                  <p className="text-gray-500 text-sm">Berakhir pada:</p>
-                  <p className="font-medium text-gray-800 mb-1">
-                    {new Date(profile.trial_ends_at).toLocaleDateString('id-ID', { dateStyle: 'long' })}
-                  </p>
-                  <p className="text-xs text-red-500 font-bold">
-                    (Sisa {hitungSisaHari(profile.trial_ends_at)})
-                  </p>
-                </div>
-              )}
-
-              <button className="w-full mt-6 bg-yellow-400 text-yellow-900 font-bold py-2 rounded-lg hover:bg-yellow-500 text-sm">
-                🔥 Upgrade Premium
-              </button>
+              <p className="text-xs text-gray-500">Email: {user?.email}</p>
             </div>
           </div>
 
-          {/* KARTU 2: CONFIGURATION */}
+          {/* KARTU KANAN: KONFIGURASI */}
           <div className="md:col-span-2">
             <div className="bg-white p-6 rounded-xl shadow-sm h-full">
-              <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-                ⚙️ Konfigurasi Bot
+              <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+                ⚙️ Pengaturan Bot
               </h2>
               
-              <div className="space-y-4">
+              <div className="space-y-6">
+                
+                {/* 1. TOKEN INPUT */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Token Fonnte
+                  <label className="block text-sm font-bold text-gray-700 mb-1">
+                    Token Fonnte (Wajib)
                   </label>
-                  <p className="text-xs text-gray-500 mb-2">
-                    Ambil token di <a href="https://fonnte.com" target="_blank" className="text-blue-500 underline">fonnte.com</a> agar bot bisa nyambung ke WA kamu.
-                  </p>
                   <input 
                     type="text" 
-                    className="w-full border border-gray-300 rounded-lg p-3 text-black font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                    placeholder="Contoh: 12345678abcdefg"
+                    className="w-full border border-gray-300 rounded-lg p-3 text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none"
+                    placeholder="Masukkan Token Fonnte..."
                     value={token}
                     onChange={(e) => setToken(e.target.value)}
                   />
                 </div>
 
-                <div className="flex justify-end">
+                {/* 2. PROMPT INPUT (FITUR BARU) */}
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">
+                    Instruksi AI (System Prompt) 🧠
+                  </label>
+                  <p className="text-xs text-gray-500 mb-2">
+                    Tentukan kepribadian bot kamu. Contoh: "Kamu adalah Admin Toko Sepatu yang ramah."
+                  </p>
+                  <textarea 
+                    rows={5}
+                    className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                    placeholder="Kamu adalah asisten..."
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                  />
+                </div>
+
+                <div className="flex justify-end pt-4 border-t">
                   <button 
-                    onClick={handleSaveToken}
+                    onClick={handleSave}
                     disabled={saving}
                     className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-blue-700 disabled:bg-gray-400 transition"
                   >
-                    {saving ? 'Menyimpan...' : 'Simpan Pengaturan 💾'}
+                    {saving ? 'Menyimpan...' : 'Simpan Perubahan 💾'}
                   </button>
                 </div>
-              </div>
 
-              {/* Tempat buat info device nanti */}
-              <div className="mt-8 pt-6 border-t border-gray-100">
-                <p className="text-sm text-gray-500 text-center">
-                  Status Device: <span className="text-gray-400 italic">Belum terkoneksi (Nanti kita update ini)</span>
-                </p>
               </div>
-
             </div>
           </div>
 
