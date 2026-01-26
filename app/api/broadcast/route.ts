@@ -19,7 +19,7 @@ export async function POST(request: Request) {
       body: JSON.stringify({
         target: target, // Bisa banyak nomor dipisah koma
         message: message,
-        delay: '2', // Jeda 2 detik biar aman dari blokir
+        delay: '6', // Jeda 2 detik biar aman dari blokir
       })
     })
 
