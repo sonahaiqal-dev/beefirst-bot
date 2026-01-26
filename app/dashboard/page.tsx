@@ -22,10 +22,12 @@ export default function Dashboard() {
   const [hours, setHours] = useState('')
   const [faq, setFaq] = useState('')
 
-  // State Broadcast (BARU) 📡
+  // --- STATE BROADCAST CANGGIH 📡 ---
   const [broadcastTarget, setBroadcastTarget] = useState('')
   const [broadcastMsg, setBroadcastMsg] = useState('')
-  const [sendingBroadcast, setSendingBroadcast] = useState(false)
+  const [isSending, setIsSending] = useState(false)
+  const [progress, setProgress] = useState('') // Menampilkan status "Mengirim 1/10..."
+  const [logs, setLogs] = useState<string[]>([]) // Log pengiriman
 
   const router = useRouter()
 
@@ -77,39 +79,74 @@ export default function Dashboard() {
     setSaving(false)
   }
 
-  // Fungsi Kirim Broadcast (BARU) 📡
-  const handleBroadcast = async () => {
-    if (!token) return alert('⚠️ Masukkan Token Fonnte dulu di menu kiri!')
-    if (!broadcastTarget || !broadcastMsg) return alert('⚠️ Nomor tujuan dan pesan wajib diisi!')
+  // --- FUNGSI SPINTAX (PENGACAK KATA) 🎲 ---
+  // Mengubah "{Halo|Hai} kak" menjadi "Halo kak" atau "Hai kak" secara acak
+  const spinText = (text: string) => {
+    return text.replace(/\{([^{}]+)\}/g, (match, content) => {
+        const choices = content.split('|')
+        return choices[Math.floor(Math.random() * choices.length)]
+    })
+  }
 
-    setSendingBroadcast(true)
-    try {
-        const res = await fetch('/api/broadcast', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                token: token,
-                target: broadcastTarget,
-                message: broadcastMsg
-            })
-        })
-        const data = await res.json()
+  // --- FUNGSI KIRIM BERTAHAP (ANTI-BANNED) 🛡️ ---
+  const handleSmartBroadcast = async () => {
+    if (!token) return alert('⚠️ Token WA kosong!')
+    if (!broadcastTarget || !broadcastMsg) return alert('⚠️ Nomor & Pesan wajib diisi!')
+
+    setIsSending(true)
+    setLogs([]) // Reset log
+    
+    // 1. Pecah nomor dari koma
+    const targets = broadcastTarget.split(',').map(t => t.trim()).filter(t => t)
+    const total = targets.length
+
+    for (let i = 0; i < total; i++) {
+        const number = targets[i]
         
-        if (data.status) {
-            alert('✅ Broadcast Terkirim! Cek WhatsApp kamu.')
-            setBroadcastMsg('') // Reset pesan
-        } else {
-            alert('❌ Gagal: ' + (data.reason || 'Cek koneksi Fonnte'))
+        // 2. Acak pesan untuk nomor ini (Biar unik tiap orang)
+        const uniqueMessage = spinText(broadcastMsg)
+        
+        setProgress(`Mengirim ke ${number} (${i + 1}/${total})...`)
+
+        try {
+            // 3. Kirim via API kita
+            const res = await fetch('/api/broadcast', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    token: token,
+                    target: number, // Kirim SATU nomor saja
+                    message: uniqueMessage // Pesan yang sudah di-spin
+                })
+            })
+            
+            const result = await res.json()
+            if(result.status) {
+                setLogs(prev => [`✅ ${number}: Sukses`, ...prev])
+            } else {
+                setLogs(prev => [`❌ ${number}: Gagal`, ...prev])
+            }
+
+        } catch (err) {
+            setLogs(prev => [`❌ ${number}: Error Sistem`, ...prev])
         }
-    } catch (err) {
-        alert('❌ Error sistem.')
+
+        // 4. JEDA WAKTU (DELAY) ANTI-BANNED ⏳
+        // Tunggu 3-6 detik acak sebelum lanjut ke nomor berikutnya
+        if (i < total - 1) {
+            const delay = Math.floor(Math.random() * 3000) + 3000 // 3000ms - 6000ms
+            setProgress(`Menunggu ${delay/1000} detik biar aman...`)
+            await new Promise(resolve => setTimeout(resolve, delay))
+        }
     }
-    setSendingBroadcast(false)
+
+    setIsSending(false)
+    setProgress('🎉 Broadcast Selesai!')
+    alert('Selesai! Cek laporan di bawah tombol.')
   }
 
   if (loading) return <div className="min-h-screen flex justify-center items-center text-slate-500">Memuat Dashboard... ⏳</div>
 
-  // Styles
   const inputStyle = "w-full border border-slate-300 bg-white text-slate-700 p-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
   const labelStyle = "block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wider"
   const cardStyle = "bg-white p-6 rounded-xl shadow-sm border border-slate-200"
@@ -131,10 +168,8 @@ export default function Dashboard() {
 
       <div className="max-w-7xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-12 gap-8">
         
-        {/* === SIDEBAR KIRI === */}
+        {/* SIDEBAR */}
         <div className="lg:col-span-4 space-y-6">
-            
-            {/* Saklar Bot */}
             <div className={`${cardStyle} border-l-4 ${isActive ? 'border-l-green-500' : 'border-l-red-500'}`}>
                 <div className="flex justify-between items-center mb-2">
                     <h2 className="font-bold text-lg">Status Bot</h2>
@@ -142,110 +177,89 @@ export default function Dashboard() {
                         {isActive ? 'AKTIF ●' : 'MATI ○'}
                     </div>
                 </div>
-                <button 
-                    onClick={() => setIsActive(!isActive)}
-                    className={`w-full py-2 mt-2 rounded-lg font-bold text-white text-sm transition-all shadow-md ${isActive ? 'bg-red-500 hover:bg-red-600' : 'bg-green-600 hover:bg-green-700'}`}
-                >
+                <button onClick={() => setIsActive(!isActive)} className={`w-full py-2 mt-2 rounded-lg font-bold text-white text-sm transition-all shadow-md ${isActive ? 'bg-red-500 hover:bg-red-600' : 'bg-green-600 hover:bg-green-700'}`}>
                     {isActive ? 'Matikan Bot' : 'Hidupkan Bot'}
                 </button>
             </div>
 
-            {/* Profil Toko */}
             <div className={cardStyle}>
                 <h3 className="font-bold text-slate-800 mb-4 border-b pb-2">🏢 Profil Bisnis</h3>
                 <div className="space-y-4">
-                    <div>
-                        <label className={labelStyle}>Nama Toko</label>
-                        <input type="text" className={inputStyle} value={storeName} onChange={(e) => setStoreName(e.target.value)} />
-                    </div>
-                     <div>
-                        <label className={labelStyle}>Token Fonnte (Wajib)</label>
-                        <input type="password" className={inputStyle} value={token} onChange={(e) => setToken(e.target.value)} />
-                    </div>
+                    <div><label className={labelStyle}>Nama Toko</label><input type="text" className={inputStyle} value={storeName} onChange={(e) => setStoreName(e.target.value)} /></div>
+                    <div><label className={labelStyle}>Token Fonnte</label><input type="password" className={inputStyle} value={token} onChange={(e) => setToken(e.target.value)} /></div>
                 </div>
             </div>
 
-             {/* Prompt AI */}
              <div className={cardStyle}>
                 <h3 className="font-bold text-slate-800 mb-4 border-b pb-2">🎭 Peran AI</h3>
                 <textarea rows={4} className={inputStyle} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Kamu adalah CS..." />
             </div>
         </div>
 
-        {/* === KONTEN KANAN === */}
+        {/* KONTEN UTAMA */}
         <div className="lg:col-span-8 space-y-6">
             
-            {/* Knowledge Base */}
             <div className={cardStyle}>
                 <div className="flex items-center gap-3 mb-6">
                     <div className="bg-blue-100 p-2 rounded-lg text-blue-600 text-xl">📚</div>
                     <h2 className="font-bold text-xl text-slate-800">Knowledge Base</h2>
                 </div>
-
                 <div className="space-y-4">
-                    <div>
-                        <label className={labelStyle}>📦 Daftar Produk</label>
-                        <textarea rows={4} className={`${inputStyle} font-mono text-sm`} value={products} onChange={(e) => setProducts(e.target.value)} />
-                    </div>
+                    <div><label className={labelStyle}>📦 Daftar Produk</label><textarea rows={4} className={`${inputStyle} font-mono text-sm`} value={products} onChange={(e) => setProducts(e.target.value)} /></div>
                     <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className={labelStyle}>⏰ Jam Buka</label>
-                            <textarea rows={3} className={inputStyle} value={hours} onChange={(e) => setHours(e.target.value)} />
-                        </div>
-                        <div>
-                            <label className={labelStyle}>ℹ️ FAQ</label>
-                            <textarea rows={3} className={inputStyle} value={faq} onChange={(e) => setFaq(e.target.value)} />
-                        </div>
+                        <div><label className={labelStyle}>⏰ Jam Buka</label><textarea rows={3} className={inputStyle} value={hours} onChange={(e) => setHours(e.target.value)} /></div>
+                        <div><label className={labelStyle}>ℹ️ FAQ</label><textarea rows={3} className={inputStyle} value={faq} onChange={(e) => setFaq(e.target.value)} /></div>
                     </div>
                 </div>
-                <div className="mt-4 text-right">
-                    <button onClick={handleSave} disabled={saving} className="bg-slate-800 text-white px-6 py-2 rounded-lg font-bold text-sm hover:bg-black transition">
-                        {saving ? '...' : 'Simpan Data'}
-                    </button>
-                </div>
+                <div className="mt-4 text-right"><button onClick={handleSave} disabled={saving} className="bg-slate-800 text-white px-6 py-2 rounded-lg font-bold text-sm hover:bg-black transition">{saving ? '...' : 'Simpan Data'}</button></div>
             </div>
 
-            {/* === FITUR BROADCAST (BARU DI SINI) === */}
-            <div className="bg-gradient-to-br from-indigo-600 to-purple-700 text-white p-6 rounded-xl shadow-lg">
+            {/* === SMART BROADCAST === */}
+            <div className="bg-gradient-to-br from-indigo-600 to-purple-800 text-white p-6 rounded-xl shadow-lg border border-indigo-400">
                 <div className="flex items-center gap-3 mb-4">
                     <div className="bg-white/20 p-2 rounded-lg text-2xl">📡</div>
                     <div>
-                        <h2 className="font-bold text-xl">Broadcast Pesan</h2>
-                        <p className="text-indigo-100 text-xs">Kirim pesan massal ke banyak nomor sekaligus.</p>
+                        <h2 className="font-bold text-xl">Smart Broadcast (Anti-Banned)</h2>
+                        <p className="text-indigo-100 text-xs">Mendukung Spintax: {'{Halo|Hai}'} & Delay Otomatis.</p>
                     </div>
                 </div>
 
                 <div className="space-y-4">
                     <div>
                         <label className="block text-xs font-bold text-indigo-200 mb-1 uppercase">Nomor Tujuan (Pisahkan Koma)</label>
-                        <input 
-                            type="text" 
-                            className="w-full bg-white/10 border border-white/20 text-white p-3 rounded-lg text-sm placeholder-indigo-300 focus:outline-none focus:ring-2 focus:ring-white"
-                            placeholder="0812xxx, 0813xxx, 0857xxx"
-                            value={broadcastTarget}
-                            onChange={(e) => setBroadcastTarget(e.target.value)}
-                        />
+                        <input type="text" className="w-full bg-white/10 border border-white/20 text-white p-3 rounded-lg text-sm placeholder-indigo-300 outline-none focus:bg-white/20" 
+                            placeholder="0812xxx, 0857xxx" value={broadcastTarget} onChange={(e) => setBroadcastTarget(e.target.value)} disabled={isSending} />
                     </div>
                     <div>
-                        <label className="block text-xs font-bold text-indigo-200 mb-1 uppercase">Isi Pesan</label>
-                        <textarea 
-                            rows={3} 
-                            className="w-full bg-white/10 border border-white/20 text-white p-3 rounded-lg text-sm placeholder-indigo-300 focus:outline-none focus:ring-2 focus:ring-white"
-                            placeholder="Halo kak, ada promo baru nih..."
-                            value={broadcastMsg}
-                            onChange={(e) => setBroadcastMsg(e.target.value)}
-                        />
+                        <label className="block text-xs font-bold text-indigo-200 mb-1 uppercase">Isi Pesan (Gunakan {'{...|...}'} untuk variasi)</label>
+                        <textarea rows={3} className="w-full bg-white/10 border border-white/20 text-white p-3 rounded-lg text-sm placeholder-indigo-300 outline-none focus:bg-white/20" 
+                            placeholder="{Halo|Hai} kak, ada {promo|diskon} baru lho..." value={broadcastMsg} onChange={(e) => setBroadcastMsg(e.target.value)} disabled={isSending} />
                     </div>
                     
-                    <div className="flex justify-end pt-2">
-                        <button 
-                            onClick={handleBroadcast}
-                            disabled={sendingBroadcast}
-                            className="bg-white text-indigo-700 px-6 py-2 rounded-lg font-bold hover:bg-indigo-50 transition shadow-lg flex items-center gap-2"
-                        >
-                            {sendingBroadcast ? 'Mengirim... 🚀' : 'Kirim Broadcast 📨'}
+                    {/* Status Bar */}
+                    {isSending && (
+                        <div className="bg-black/30 p-3 rounded-lg text-sm font-mono text-yellow-300 animate-pulse">
+                            ⏳ {progress}
+                        </div>
+                    )}
+
+                    <div className="flex justify-between items-center pt-2">
+                        <div className="text-xs text-indigo-200">
+                           💡 Jeda otomatis 3-6 detik per pesan.
+                        </div>
+                        <button onClick={handleSmartBroadcast} disabled={isSending} className="bg-white text-indigo-700 px-6 py-2 rounded-lg font-bold hover:bg-indigo-50 transition shadow-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                            {isSending ? 'Sedang Mengirim... 🚀' : 'Mulai Kirim 📨'}
                         </button>
                     </div>
+
+                    {/* Log Pengiriman */}
+                    {logs.length > 0 && (
+                        <div className="mt-4 bg-black/20 p-3 rounded-lg max-h-32 overflow-y-auto text-xs font-mono space-y-1">
+                            {logs.map((log, idx) => (
+                                <div key={idx} className="text-white/80 border-b border-white/10 pb-1">{log}</div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </div>
 
