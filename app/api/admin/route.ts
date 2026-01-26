@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseAdmin = createClient(
+// Setup Supabase dengan Service Role Key (Wajib untuk akses Admin)
+const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
@@ -9,66 +10,59 @@ const supabaseAdmin = createClient(
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { action, userId, targetId, newStatus } = body
+    const { action, userId, targetId, newStatus, token } = body
 
-    // Cek Admin
-    const { data: requester } = await supabaseAdmin
-      .from('profiles')
-      .select('is_admin')
-      .eq('id', userId)
-      .single()
-
-    if (!requester?.is_admin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-
-    // --- MODE 1: FETCH DATA LENGKAP ---
+    // 1. Fetch Semua User
     if (action === 'fetch_users') {
-      const { data: users, error } = await supabaseAdmin
+      const { data: profiles, error } = await supabase
         .from('profiles')
-        .select('*') // Ambil semua data termasuk banned & tanggal
+        .select('*')
         .order('created_at', { ascending: false })
-
+      
       if (error) throw error
-      return NextResponse.json({ users })
+      return NextResponse.json({ users: profiles })
     }
 
-    // --- MODE 2: UPDATE STATUS LANGGANAN ---
+    // 2. Update Status Langganan (Premium/Trial)
     if (action === 'update_status') {
-      let updateData: any = { subscription_status: newStatus }
+      const updates: any = { subscription_status: newStatus }
       
-      const now = new Date()
       if (newStatus === 'premium') {
-        now.setDate(now.getDate() + 30) // Tambah 30 hari
-        updateData.trial_ends_at = now.toISOString()
+        const nextMonth = new Date()
+        nextMonth.setDate(nextMonth.getDate() + 30)
+        updates.trial_ends_at = nextMonth.toISOString()
       } else {
-        now.setDate(now.getDate() + 7) // Reset trial 7 hari
-        updateData.trial_ends_at = now.toISOString()
+        const nextWeek = new Date()
+        nextWeek.setDate(nextWeek.getDate() + 7)
+        updates.trial_ends_at = nextWeek.toISOString()
       }
 
-      const { error } = await supabaseAdmin.from('profiles').update(updateData).eq('id', targetId)
-      if (error) throw error
+      await supabase.from('profiles').update(updates).eq('id', targetId)
       return NextResponse.json({ success: true })
     }
 
-    // --- MODE 3: FITUR BANNED (BARU) 🚫 ---
+    // 3. Toggle Banned
     if (action === 'toggle_ban') {
-      // Cek dulu status sekarang
-      const { data: current } = await supabaseAdmin.from('profiles').select('is_banned').eq('id', targetId).single()
-      
-      // Balik statusnya (kalau true jadi false, kalau false jadi true)
-      const newBanStatus = !current?.is_banned
-
-      const { error } = await supabaseAdmin
-        .from('profiles')
-        .update({ is_banned: newBanStatus })
-        .eq('id', targetId)
-
-      if (error) throw error
-      return NextResponse.json({ success: true, is_banned: newBanStatus })
+       const { data: user } = await supabase.from('profiles').select('is_banned').eq('id', targetId).single()
+       await supabase.from('profiles').update({ is_banned: !user?.is_banned }).eq('id', targetId)
+       return NextResponse.json({ success: true })
     }
 
-    return NextResponse.json({ error: 'Action invalid' }, { status: 400 })
+    // 4. UPDATE TOKEN (LOGIKA BARU)
+    if (action === 'update_token') {
+        const { error } = await supabase
+            .from('profiles')
+            .update({ fonnte_token: token }) 
+            .eq('id', targetId)
+        
+        if (error) throw error
+        return NextResponse.json({ success: true })
+    }
+
+    return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
 
   } catch (err: any) {
+    console.error("Admin API Error:", err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }
