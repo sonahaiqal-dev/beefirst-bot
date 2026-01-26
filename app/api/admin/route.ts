@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-// Pakai Service Role Key (Kunci Sakti) biar bisa bypass aturan database
+// Pastikan kamu sudah pasang SUPABASE_SERVICE_ROLE_KEY di .env.local laptop kamu!
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -20,37 +20,30 @@ export async function POST(request: Request) {
       .single()
 
     if (!requester || !requester.is_admin) {
-      return NextResponse.json({ error: 'ANDA BUKAN ADMIN! 👮‍♂️' }, { status: 403 })
+      return NextResponse.json({ error: 'ANDA BUKAN ADMIN!' }, { status: 403 })
     }
 
-    // --- MODE 1: AMBIL SEMUA USER (GET LIST) ---
+    // --- MODE 1: AMBIL DATA USER ---
     if (action === 'fetch_users') {
       const { data: users, error } = await supabaseAdmin
         .from('profiles')
         .select('id, email, subscription_status, trial_ends_at, store_name, store_phone, is_active')
-        .order('created_at', { ascending: false }) // Yang baru daftar paling atas
+        .order('created_at', { ascending: false })
 
-      // Kita ambil email asli dari auth.users (karena di profile kadang gak lengkap)
-      // Tapi untuk simpel, kita pakai data profile dulu. 
-      // Note: Idealnya join table auth, tapi ini cukup untuk MVP.
-      
+      if (error) throw error
       return NextResponse.json({ users })
     }
 
-    // --- MODE 2: UPDATE STATUS USER (UPGRADE/DOWNGRADE) ---
+    // --- MODE 2: UBAH STATUS ---
     if (action === 'update_status') {
-      
       let updateData: any = { subscription_status: newStatus }
       
-      // Kalau di-set Premium, perpanjang masa aktif 30 hari
+      // Tambah waktu expired
       if (newStatus === 'premium') {
         const nextMonth = new Date()
         nextMonth.setDate(nextMonth.getDate() + 30)
         updateData.trial_ends_at = nextMonth.toISOString()
-      }
-      
-      // Kalau di-set Trial, kasih 7 hari
-      if (newStatus === 'trial') {
+      } else if (newStatus === 'trial') {
         const nextWeek = new Date()
         nextWeek.setDate(nextWeek.getDate() + 7)
         updateData.trial_ends_at = nextWeek.toISOString()
@@ -68,7 +61,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Action tidak dikenal' }, { status: 400 })
 
   } catch (err: any) {
-    console.error("Admin Error:", err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }
