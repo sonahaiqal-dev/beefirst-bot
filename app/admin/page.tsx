@@ -6,169 +6,151 @@ import { useRouter } from 'next/navigation'
 export default function AdminPage() {
   const [users, setUsers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [errorMsg, setErrorMsg] = useState('') // Buat nampilin error
   const [currentUser, setCurrentUser] = useState<any>(null)
   const router = useRouter()
 
   useEffect(() => {
     const checkAdmin = async () => {
-      try {
-        console.log("1. Cek User Login...")
-        const { data: { user } } = await supabase.auth.getUser()
-        
-        if (!user) { 
-          console.log("User gak login, tendang ke login.")
-          router.push('/login'); 
-          return 
-        }
-        
-        console.log("2. Cek Status Admin di Database...")
-        const { data: profile, error } = await supabase
-          .from('profiles')
-          .select('is_admin')
-          .eq('id', user.id)
-          .single()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { router.push('/login'); return }
+      
+      const { data: profile } = await supabase.from('profiles').select('is_admin').eq('id', user.id).single()
+      if (!profile?.is_admin) { router.push('/dashboard'); return }
 
-        if (error) throw new Error("Gagal baca profil: " + error.message)
-
-        if (!profile?.is_admin) {
-          alert("⛔ Kamu bukan Admin! Hush sana!")
-          router.push('/dashboard')
-          return
-        }
-
-        console.log("3. User Valid! Ambil data semua user...")
-        setCurrentUser(user)
-        await fetchUsers(user.id) // Panggil fungsi fetch
-
-      } catch (err: any) {
-        console.error("ERROR FATAL:", err)
-        setErrorMsg(err.message) // Tampilkan error di layar
-        setLoading(false)
-      }
+      setCurrentUser(user)
+      fetchUsers(user.id)
     }
-
     checkAdmin()
   }, [])
 
   const fetchUsers = async (adminId: string) => {
-    try {
-      const res = await fetch('/api/admin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'fetch_users', userId: adminId })
-      })
-
-      // Cek apakah API meledak (Bukan 200 OK)
-      if (!res.ok) {
-        const text = await res.text() // Baca error aslinya
-        throw new Error(`API Error (${res.status}): ${text}`)
-      }
-
-      const data = await res.json()
-      if (data.users) {
-        setUsers(data.users)
-      } else {
-        throw new Error("Data user kosong dari API")
-      }
-
-    } catch (err: any) {
-      console.error("Gagal Fetch Users:", err)
-      setErrorMsg("Gagal ambil data: " + err.message)
-    } finally {
-      setLoading(false) // Wajib matikan loading apapun yang terjadi
-    }
+    setLoading(true)
+    const res = await fetch('/api/admin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'fetch_users', userId: adminId })
+    })
+    const data = await res.json()
+    if (data.users) setUsers(data.users)
+    setLoading(false)
   }
 
-  const updateUserStatus = async (targetId: string, newStatus: string) => {
-    if(!confirm(`Yakin ubah user ini jadi ${newStatus}?`)) return
-
-    try {
-        const res = await fetch('/api/admin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-            action: 'update_status', 
-            userId: currentUser.id, 
-            targetId: targetId,
-            newStatus: newStatus
-        })
-        })
-        
-        const data = await res.json()
-        if (data.success) {
-            alert("✅ Status Berhasil Diubah!")
-            fetchUsers(currentUser.id)
-        } else {
-            alert("❌ Gagal: " + data.error)
-        }
-    } catch (err: any) {
-        alert("Error: " + err.message)
-    }
+  const handleSubscription = async (targetId: string, status: string) => {
+    if(!confirm(`Ubah status jadi ${status}?`)) return
+    await fetch('/api/admin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'update_status', userId: currentUser.id, targetId, newStatus: status })
+    })
+    fetchUsers(currentUser.id)
   }
 
-  const formatDate = (dateStr: string) => {
-    if (!dateStr) return '-'
-    return new Date(dateStr).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
+  const handleBan = async (targetId: string, currentStatus: boolean) => {
+    const msg = currentStatus ? "Buka Blokir (Un-Ban) user ini?" : "⚠️ BANNED user ini? Bot dia akan mati total."
+    if(!confirm(msg)) return
+    
+    await fetch('/api/admin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'toggle_ban', userId: currentUser.id, targetId })
+    })
+    fetchUsers(currentUser.id)
   }
 
-  // TAMPILAN ERROR (Kalau ada error, muncul di sini)
-  if (errorMsg) return (
-    <div className="min-h-screen bg-gray-900 text-red-500 p-10 font-mono">
-      <h1 className="text-2xl font-bold mb-4">☠️ ERROR TERDETEKSI</h1>
-      <div className="bg-gray-800 p-4 rounded border border-red-800">
-        {errorMsg}
-      </div>
-      <button onClick={() => window.location.reload()} className="mt-4 bg-white text-black px-4 py-2 rounded">Coba Refresh</button>
-    </div>
-  )
+  // Hitung sisa hari
+  const getDaysLeft = (dateStr: string) => {
+    const end = new Date(dateStr).getTime()
+    const now = new Date().getTime()
+    const diff = Math.ceil((end - now) / (1000 * 3600 * 24))
+    return diff > 0 ? `${diff} Hari Lagi` : 'EXPIRED'
+  }
 
-  if (loading) return <div className="p-10 text-center font-mono text-white">🕵️‍♂️ Memuat Data Rahasia... (Cek Console F12 kalau lama)</div>
+  if (loading) return <div className="p-10 text-center text-white bg-gray-900 min-h-screen">⏳ Mengambil Data User...</div>
 
-  // ... (Sisa Return UI Tabel sama seperti sebelumnya)
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100 p-6 font-sans">
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-red-500">ADMIN CONTROL ROOM 👮‍♂️</h1>
-            <p className="text-gray-400">Panel Kontrol Owner</p>
+            <h1 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">ADMIN DASHBOARD</h1>
+            <p className="text-gray-400 text-sm">Total Pengguna: {users.length} Orang</p>
           </div>
-          <button onClick={() => router.push('/dashboard')} className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded text-sm">Kembali</button>
+          <button onClick={() => router.push('/dashboard')} className="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded text-sm border border-gray-600">⬅️ Dashboard</button>
         </div>
 
         <div className="bg-gray-800 rounded-xl overflow-hidden shadow-2xl border border-gray-700">
-            <table className="w-full text-left text-sm text-gray-400">
-              <thead className="bg-gray-900 text-gray-200 uppercase font-bold">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm text-gray-300">
+              <thead className="bg-gray-950 text-gray-400 uppercase text-xs font-bold tracking-wider">
                 <tr>
-                  <th className="px-6 py-4">User</th>
-                  <th className="px-6 py-4">Status</th>
-                  <th className="px-6 py-4">Aksi</th>
+                  <th className="px-6 py-4">User / Toko</th>
+                  <th className="px-6 py-4">Data Bot</th>
+                  <th className="px-6 py-4">Status & Sisa Waktu</th>
+                  <th className="px-6 py-4 text-center">Kontrol</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-700">
                 {users.map((user) => (
-                  <tr key={user.id} className="hover:bg-gray-750">
+                  <tr key={user.id} className={`hover:bg-gray-750 transition ${user.is_banned ? 'bg-red-900/20' : ''}`}>
+                    
+                    {/* KOLOM 1: IDENTITAS */}
                     <td className="px-6 py-4">
-                        <div className="font-bold text-white">{user.email}</div>
-                        <div className="text-xs">{user.store_name}</div>
+                      <div className="font-bold text-white flex items-center gap-2">
+                        {user.email}
+                        {user.is_admin && <span className="bg-purple-600 text-xs px-1 rounded">OWNER</span>}
+                        {user.is_banned && <span className="bg-red-600 text-xs px-2 rounded animate-pulse">🚫 BANNED</span>}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">Join: {new Date(user.created_at).toLocaleDateString()}</div>
                     </td>
+
+                    {/* KOLOM 2: DATA TOKO */}
                     <td className="px-6 py-4">
-                        <span className={`px-2 py-1 rounded text-xs font-bold ${user.subscription_status === 'premium' ? 'bg-blue-900 text-blue-300' : 'bg-yellow-900 text-yellow-300'}`}>
-                            {user.subscription_status}
+                      <div className="text-white font-medium">{user.store_name || '(Belum set nama)'}</div>
+                      <div className="text-xs text-gray-500">{user.store_phone || '-'}</div>
+                      <div className={`text-[10px] mt-1 px-2 py-0.5 rounded w-fit ${user.fonnte_token ? 'bg-green-900 text-green-300' : 'bg-gray-700 text-gray-400'}`}>
+                        {user.fonnte_token ? 'Token OK ✅' : 'Token Kosong ⚠️'}
+                      </div>
+                    </td>
+
+                    {/* KOLOM 3: SUBSCRIPTION */}
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2 py-0.5 rounded text-xs font-bold ${
+                          user.subscription_status === 'premium' ? 'bg-blue-600 text-white' : 'bg-yellow-600 text-black'
+                        }`}>
+                          {user.subscription_status.toUpperCase()}
                         </span>
+                      </div>
+                      <div className="text-xs font-mono mt-1 text-gray-400">
+                        {getDaysLeft(user.trial_ends_at)}
+                      </div>
                     </td>
+
+                    {/* KOLOM 4: TOMBOL AKSI */}
                     <td className="px-6 py-4">
+                      <div className="flex justify-center gap-2 items-center">
+                        {/* Tombol Upgrade/Downgrade */}
                         {user.subscription_status !== 'premium' ? (
-                          <button onClick={() => updateUserStatus(user.id, 'premium')} className="bg-green-600 text-white px-3 py-1 rounded text-xs">UPGRADE</button>
+                          <button onClick={() => handleSubscription(user.id, 'premium')} className="bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded text-xs">⬆️ Premium</button>
                         ) : (
-                          <button onClick={() => updateUserStatus(user.id, 'trial')} className="bg-red-900 text-red-200 px-3 py-1 rounded text-xs">DOWNGRADE</button>
+                          <button onClick={() => handleSubscription(user.id, 'trial')} className="bg-yellow-600 hover:bg-yellow-500 text-black px-3 py-1 rounded text-xs">⬇️ Trial</button>
                         )}
+
+                        {/* Tombol BANNED */}
+                        <button 
+                          onClick={() => handleBan(user.id, user.is_banned)} 
+                          className={`px-3 py-1 rounded text-xs font-bold border transition ${user.is_banned ? 'bg-gray-600 border-gray-500' : 'bg-transparent border-red-500 text-red-500 hover:bg-red-900'}`}
+                        >
+                          {user.is_banned ? '🔓 UNBAN' : '🚫 BAN'}
+                        </button>
+                      </div>
                     </td>
+
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
         </div>
       </div>
     </div>

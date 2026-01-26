@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-// Pastikan kamu sudah pasang SUPABASE_SERVICE_ROLE_KEY di .env.local laptop kamu!
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -12,53 +11,62 @@ export async function POST(request: Request) {
     const body = await request.json()
     const { action, userId, targetId, newStatus } = body
 
-    // 1. CEK KEAMANAN: Pastikan yang request adalah ADMIN
+    // Cek Admin
     const { data: requester } = await supabaseAdmin
       .from('profiles')
       .select('is_admin')
       .eq('id', userId)
       .single()
 
-    if (!requester || !requester.is_admin) {
-      return NextResponse.json({ error: 'ANDA BUKAN ADMIN!' }, { status: 403 })
-    }
+    if (!requester?.is_admin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-    // --- MODE 1: AMBIL DATA USER ---
+    // --- MODE 1: FETCH DATA LENGKAP ---
     if (action === 'fetch_users') {
       const { data: users, error } = await supabaseAdmin
         .from('profiles')
-        .select('id, email, subscription_status, trial_ends_at, store_name, store_phone, is_active')
+        .select('*') // Ambil semua data termasuk banned & tanggal
         .order('created_at', { ascending: false })
 
       if (error) throw error
       return NextResponse.json({ users })
     }
 
-    // --- MODE 2: UBAH STATUS ---
+    // --- MODE 2: UPDATE STATUS LANGGANAN ---
     if (action === 'update_status') {
       let updateData: any = { subscription_status: newStatus }
       
-      // Tambah waktu expired
+      const now = new Date()
       if (newStatus === 'premium') {
-        const nextMonth = new Date()
-        nextMonth.setDate(nextMonth.getDate() + 30)
-        updateData.trial_ends_at = nextMonth.toISOString()
-      } else if (newStatus === 'trial') {
-        const nextWeek = new Date()
-        nextWeek.setDate(nextWeek.getDate() + 7)
-        updateData.trial_ends_at = nextWeek.toISOString()
+        now.setDate(now.getDate() + 30) // Tambah 30 hari
+        updateData.trial_ends_at = now.toISOString()
+      } else {
+        now.setDate(now.getDate() + 7) // Reset trial 7 hari
+        updateData.trial_ends_at = now.toISOString()
       }
 
-      const { error } = await supabaseAdmin
-        .from('profiles')
-        .update(updateData)
-        .eq('id', targetId)
-
+      const { error } = await supabaseAdmin.from('profiles').update(updateData).eq('id', targetId)
       if (error) throw error
       return NextResponse.json({ success: true })
     }
 
-    return NextResponse.json({ error: 'Action tidak dikenal' }, { status: 400 })
+    // --- MODE 3: FITUR BANNED (BARU) 🚫 ---
+    if (action === 'toggle_ban') {
+      // Cek dulu status sekarang
+      const { data: current } = await supabaseAdmin.from('profiles').select('is_banned').eq('id', targetId).single()
+      
+      // Balik statusnya (kalau true jadi false, kalau false jadi true)
+      const newBanStatus = !current?.is_banned
+
+      const { error } = await supabaseAdmin
+        .from('profiles')
+        .update({ is_banned: newBanStatus })
+        .eq('id', targetId)
+
+      if (error) throw error
+      return NextResponse.json({ success: true, is_banned: newBanStatus })
+    }
+
+    return NextResponse.json({ error: 'Action invalid' }, { status: 400 })
 
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
