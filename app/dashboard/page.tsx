@@ -10,19 +10,22 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   
-  // 1. Settings Akun
+  // Settings
   const [storeName, setStoreName] = useState('')
   const [storePhone, setStorePhone] = useState('')
   const [token, setToken] = useState('')
-  
-  // 2. Fitur Utama
-  const [isActive, setIsActive] = useState(true) // Saklar Bot
+  const [isActive, setIsActive] = useState(true) 
   const [prompt, setPrompt] = useState('')
   
-  // 3. Knowledge Base
+  // Knowledge Base
   const [products, setProducts] = useState('')
   const [hours, setHours] = useState('')
   const [faq, setFaq] = useState('')
+
+  // State Broadcast (BARU) 📡
+  const [broadcastTarget, setBroadcastTarget] = useState('')
+  const [broadcastMsg, setBroadcastMsg] = useState('')
+  const [sendingBroadcast, setSendingBroadcast] = useState(false)
 
   const router = useRouter()
 
@@ -39,11 +42,10 @@ export default function Dashboard() {
         .single()
 
       if (data) {
-        // Load semua data
         setStoreName(data.store_name || '')
         setStorePhone(data.store_phone || '')
         setToken(data.fonnte_token || '')
-        setIsActive(data.is_active ?? true) // Default true kalau null
+        setIsActive(data.is_active ?? true)
         setPrompt(data.system_prompt || '')
         setProducts(data.kb_products || '')
         setHours(data.kb_hours || '')
@@ -62,7 +64,7 @@ export default function Dashboard() {
         store_name: storeName,
         store_phone: storePhone,
         fonnte_token: token,
-        is_active: isActive, // Simpan status saklar
+        is_active: isActive,
         system_prompt: prompt,
         kb_products: products,
         kb_hours: hours,
@@ -75,6 +77,36 @@ export default function Dashboard() {
     setSaving(false)
   }
 
+  // Fungsi Kirim Broadcast (BARU) 📡
+  const handleBroadcast = async () => {
+    if (!token) return alert('⚠️ Masukkan Token Fonnte dulu di menu kiri!')
+    if (!broadcastTarget || !broadcastMsg) return alert('⚠️ Nomor tujuan dan pesan wajib diisi!')
+
+    setSendingBroadcast(true)
+    try {
+        const res = await fetch('/api/broadcast', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                token: token,
+                target: broadcastTarget,
+                message: broadcastMsg
+            })
+        })
+        const data = await res.json()
+        
+        if (data.status) {
+            alert('✅ Broadcast Terkirim! Cek WhatsApp kamu.')
+            setBroadcastMsg('') // Reset pesan
+        } else {
+            alert('❌ Gagal: ' + (data.reason || 'Cek koneksi Fonnte'))
+        }
+    } catch (err) {
+        alert('❌ Error sistem.')
+    }
+    setSendingBroadcast(false)
+  }
+
   if (loading) return <div className="min-h-screen flex justify-center items-center text-slate-500">Memuat Dashboard... ⏳</div>
 
   // Styles
@@ -85,8 +117,8 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-800">
       
-      {/* NAVBAR ATAS */}
-      <nav className="bg-white border-b px-6 py-4 flex justify-between items-center sticky top-0 z-10">
+      {/* NAVBAR */}
+      <nav className="bg-white border-b px-6 py-4 flex justify-between items-center sticky top-0 z-10 shadow-sm">
         <div className="flex items-center gap-3">
             <div className="bg-blue-600 text-white p-2 rounded-lg font-bold text-xl">🐝</div>
             <div>
@@ -94,18 +126,15 @@ export default function Dashboard() {
                 <p className="text-xs text-slate-500">SaaS Dashboard</p>
             </div>
         </div>
-        <div className="flex items-center gap-4">
-            <p className="text-sm hidden md:block text-slate-500">Halo, {storeName || user?.email}</p>
-            <button onClick={async () => { await supabase.auth.signOut(); router.push('/login') }} className="text-red-500 text-sm font-bold hover:bg-red-50 px-3 py-1 rounded transition">Keluar</button>
-        </div>
+        <button onClick={async () => { await supabase.auth.signOut(); router.push('/login') }} className="text-red-500 text-sm font-bold hover:bg-red-50 px-3 py-1 rounded transition">Keluar</button>
       </nav>
 
       <div className="max-w-7xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-12 gap-8">
         
-        {/* === SIDEBAR KIRI (Pengaturan Akun) === */}
+        {/* === SIDEBAR KIRI === */}
         <div className="lg:col-span-4 space-y-6">
             
-            {/* 1. KARTU SAKLAR UTAMA (SWITCH ON/OFF) */}
+            {/* Saklar Bot */}
             <div className={`${cardStyle} border-l-4 ${isActive ? 'border-l-green-500' : 'border-l-red-500'}`}>
                 <div className="flex justify-between items-center mb-2">
                     <h2 className="font-bold text-lg">Status Bot</h2>
@@ -113,97 +142,111 @@ export default function Dashboard() {
                         {isActive ? 'AKTIF ●' : 'MATI ○'}
                     </div>
                 </div>
-                <p className="text-sm text-slate-500 mb-4">
-                    {isActive ? 'Bot akan membalas pesan otomatis.' : 'Bot sedang tidur. Anda bisa balas manual.'}
-                </p>
-                
-                {/* TOMBOL TOGGLE */}
                 <button 
                     onClick={() => setIsActive(!isActive)}
-                    className={`w-full py-3 rounded-lg font-bold text-white transition-all shadow-md ${isActive ? 'bg-red-500 hover:bg-red-600' : 'bg-green-600 hover:bg-green-700'}`}
+                    className={`w-full py-2 mt-2 rounded-lg font-bold text-white text-sm transition-all shadow-md ${isActive ? 'bg-red-500 hover:bg-red-600' : 'bg-green-600 hover:bg-green-700'}`}
                 >
-                    {isActive ? '🔴 Matikan Bot' : '🟢 Hidupkan Bot'}
+                    {isActive ? 'Matikan Bot' : 'Hidupkan Bot'}
                 </button>
             </div>
 
-            {/* 2. PROFIL TOKO */}
+            {/* Profil Toko */}
             <div className={cardStyle}>
                 <h3 className="font-bold text-slate-800 mb-4 border-b pb-2">🏢 Profil Bisnis</h3>
-                
                 <div className="space-y-4">
                     <div>
                         <label className={labelStyle}>Nama Toko</label>
-                        <input type="text" className={inputStyle} value={storeName} onChange={(e) => setStoreName(e.target.value)} placeholder="Contoh: Kopi Senja" />
-                    </div>
-                    <div>
-                        <label className={labelStyle}>No. WhatsApp Owner</label>
-                        <input type="text" className={inputStyle} value={storePhone} onChange={(e) => setStorePhone(e.target.value)} placeholder="0812..." />
+                        <input type="text" className={inputStyle} value={storeName} onChange={(e) => setStoreName(e.target.value)} />
                     </div>
                      <div>
-                        <label className={labelStyle}>Token Fonnte</label>
-                        <input type="text" className={inputStyle} value={token} onChange={(e) => setToken(e.target.value)} placeholder="Paste Token Disini..." />
-                        <a href="https://fonnte.com" target="_blank" className="text-xs text-blue-500 hover:underline mt-1 block">Ambil token di Fonnte ↗</a>
+                        <label className={labelStyle}>Token Fonnte (Wajib)</label>
+                        <input type="password" className={inputStyle} value={token} onChange={(e) => setToken(e.target.value)} />
                     </div>
                 </div>
             </div>
 
-             {/* 3. PROMPT UTAMA */}
+             {/* Prompt AI */}
              <div className={cardStyle}>
                 <h3 className="font-bold text-slate-800 mb-4 border-b pb-2">🎭 Peran AI</h3>
-                <label className={labelStyle}>Instruksi Dasar</label>
-                <textarea rows={4} className={inputStyle} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Kamu adalah CS yang ramah..." />
+                <textarea rows={4} className={inputStyle} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Kamu adalah CS..." />
             </div>
         </div>
 
-        {/* === KONTEN KANAN (Knowledge Base) === */}
+        {/* === KONTEN KANAN === */}
         <div className="lg:col-span-8 space-y-6">
             
+            {/* Knowledge Base */}
             <div className={cardStyle}>
                 <div className="flex items-center gap-3 mb-6">
-                    <div className="bg-blue-100 p-3 rounded-lg text-blue-600 text-xl">📚</div>
-                    <div>
-                        <h2 className="font-bold text-xl text-slate-800">Database Pengetahuan</h2>
-                        <p className="text-sm text-slate-500">Ajari bot tentang produk dan tokomu.</p>
-                    </div>
+                    <div className="bg-blue-100 p-2 rounded-lg text-blue-600 text-xl">📚</div>
+                    <h2 className="font-bold text-xl text-slate-800">Knowledge Base</h2>
                 </div>
 
-                <div className="space-y-6">
-                    {/* Produk */}
+                <div className="space-y-4">
                     <div>
-                        <label className={labelStyle}>📦 Daftar Produk & Harga</label>
-                        <textarea rows={6} className={`${inputStyle} font-mono text-sm`} value={products} onChange={(e) => setProducts(e.target.value)} placeholder="- Produk A: Rp 10.000..." />
+                        <label className={labelStyle}>📦 Daftar Produk</label>
+                        <textarea rows={4} className={`${inputStyle} font-mono text-sm`} value={products} onChange={(e) => setProducts(e.target.value)} />
                     </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* Jam Buka */}
+                    <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <label className={labelStyle}>⏰ Jam Operasional</label>
-                            <textarea rows={4} className={inputStyle} value={hours} onChange={(e) => setHours(e.target.value)} placeholder="Senin-Jumat: 09.00 - 17.00" />
+                            <label className={labelStyle}>⏰ Jam Buka</label>
+                            <textarea rows={3} className={inputStyle} value={hours} onChange={(e) => setHours(e.target.value)} />
                         </div>
-                        {/* FAQ */}
                         <div>
-                            <label className={labelStyle}>ℹ️ FAQ / Info Lain</label>
-                            <textarea rows={4} className={inputStyle} value={faq} onChange={(e) => setFaq(e.target.value)} placeholder="Lokasi, Wifi, dll..." />
+                            <label className={labelStyle}>ℹ️ FAQ</label>
+                            <textarea rows={3} className={inputStyle} value={faq} onChange={(e) => setFaq(e.target.value)} />
                         </div>
                     </div>
                 </div>
-
-                {/* TOMBOL SIMPAN MELAYANG DI BAWAH (MOBILE FRIENDLY) */}
-                <div className="mt-8 pt-6 border-t flex justify-end">
-                    <button 
-                        onClick={handleSave} 
-                        disabled={saving}
-                        className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg shadow-blue-200 hover:bg-blue-700 hover:-translate-y-1 transition flex items-center gap-2"
-                    >
-                        {saving ? 'Menyimpan...' : '💾 Simpan Semua Perubahan'}
+                <div className="mt-4 text-right">
+                    <button onClick={handleSave} disabled={saving} className="bg-slate-800 text-white px-6 py-2 rounded-lg font-bold text-sm hover:bg-black transition">
+                        {saving ? '...' : 'Simpan Data'}
                     </button>
                 </div>
             </div>
 
-            {/* AREA BROADCAST (COMING SOON) */}
-            <div className="bg-slate-200 p-6 rounded-xl border border-slate-300 border-dashed text-center opacity-70">
-                <h3 className="font-bold text-slate-600">📡 Fitur Broadcast (Coming Soon)</h3>
-                <p className="text-sm text-slate-500">Menu kirim pesan massal akan muncul disini nanti.</p>
+            {/* === FITUR BROADCAST (BARU DI SINI) === */}
+            <div className="bg-gradient-to-br from-indigo-600 to-purple-700 text-white p-6 rounded-xl shadow-lg">
+                <div className="flex items-center gap-3 mb-4">
+                    <div className="bg-white/20 p-2 rounded-lg text-2xl">📡</div>
+                    <div>
+                        <h2 className="font-bold text-xl">Broadcast Pesan</h2>
+                        <p className="text-indigo-100 text-xs">Kirim pesan massal ke banyak nomor sekaligus.</p>
+                    </div>
+                </div>
+
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-xs font-bold text-indigo-200 mb-1 uppercase">Nomor Tujuan (Pisahkan Koma)</label>
+                        <input 
+                            type="text" 
+                            className="w-full bg-white/10 border border-white/20 text-white p-3 rounded-lg text-sm placeholder-indigo-300 focus:outline-none focus:ring-2 focus:ring-white"
+                            placeholder="0812xxx, 0813xxx, 0857xxx"
+                            value={broadcastTarget}
+                            onChange={(e) => setBroadcastTarget(e.target.value)}
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-indigo-200 mb-1 uppercase">Isi Pesan</label>
+                        <textarea 
+                            rows={3} 
+                            className="w-full bg-white/10 border border-white/20 text-white p-3 rounded-lg text-sm placeholder-indigo-300 focus:outline-none focus:ring-2 focus:ring-white"
+                            placeholder="Halo kak, ada promo baru nih..."
+                            value={broadcastMsg}
+                            onChange={(e) => setBroadcastMsg(e.target.value)}
+                        />
+                    </div>
+                    
+                    <div className="flex justify-end pt-2">
+                        <button 
+                            onClick={handleBroadcast}
+                            disabled={sendingBroadcast}
+                            className="bg-white text-indigo-700 px-6 py-2 rounded-lg font-bold hover:bg-indigo-50 transition shadow-lg flex items-center gap-2"
+                        >
+                            {sendingBroadcast ? 'Mengirim... 🚀' : 'Kirim Broadcast 📨'}
+                        </button>
+                    </div>
+                </div>
             </div>
 
         </div>
