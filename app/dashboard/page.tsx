@@ -10,20 +10,20 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   
-  // State Data Toko & Bot
+  // State Data
   const [storeName, setStoreName] = useState('')
   const [storePhone, setStorePhone] = useState('')
   const [token, setToken] = useState('')
   const [isActive, setIsActive] = useState(true) 
   const [prompt, setPrompt] = useState('')
-  const [totalChats, setTotalChats] = useState(0) // State Statistik Baru 📊
+  const [totalChats, setTotalChats] = useState(0)
   
-  // State Knowledge Base
+  // Knowledge Base
   const [products, setProducts] = useState('')
   const [hours, setHours] = useState('')
   const [faq, setFaq] = useState('')
 
-  // State Broadcast Canggih 📡
+  // Broadcast
   const [broadcastTarget, setBroadcastTarget] = useState('')
   const [broadcastMsg, setBroadcastMsg] = useState('')
   const [isSending, setIsSending] = useState(false)
@@ -32,7 +32,6 @@ export default function Dashboard() {
 
   const router = useRouter()
 
-  // 1. AMBIL DATA SAAT LOAD
   useEffect(() => {
     const getData = async () => {
       const { data: { user } } = await supabase.auth.getUser()
@@ -51,7 +50,7 @@ export default function Dashboard() {
         setToken(data.fonnte_token || '')
         setIsActive(data.is_active ?? true)
         setPrompt(data.system_prompt || '')
-        setTotalChats(data.total_chats || 0) // Ambil Data Statistik
+        setTotalChats(data.total_chats || 0)
         setProducts(data.kb_products || '')
         setHours(data.kb_hours || '')
         setFaq(data.kb_faq || '')
@@ -61,7 +60,7 @@ export default function Dashboard() {
     getData()
   }, [])
 
-  // 2. FUNGSI SIMPAN PENGATURAN
+  // 1. FUNGSI SIMPAN MANUAL (Untuk Teks)
   const handleSave = async () => {
     setSaving(true)
     const { error } = await supabase
@@ -70,20 +69,39 @@ export default function Dashboard() {
         store_name: storeName,
         store_phone: storePhone,
         fonnte_token: token,
-        is_active: isActive,
         system_prompt: prompt,
         kb_products: products,
         kb_hours: hours,
         kb_faq: faq
+        // Note: is_active dihapus dari sini biar gak nimpa status saklar
       })
       .eq('id', user.id)
 
     if (error) alert('Gagal: ' + error.message)
-    else alert('✅ Data Berhasil Disimpan!')
+    else alert('✅ Data Toko Berhasil Disimpan!')
     setSaving(false)
   }
 
-  // 3. LOGIKA SMART BROADCAST (ANTI-BANNED) 🛡️
+  // 2. FUNGSI SAKLAR AUTO-SAVE (KHUSUS BOT ON/OFF) ⚡
+  const handleToggleBot = async () => {
+    // 1. Ganti tampilan dulu biar instan (UX)
+    const newStatus = !isActive
+    setIsActive(newStatus)
+
+    // 2. Langsung tembak ke Database
+    const { error } = await supabase
+        .from('profiles')
+        .update({ is_active: newStatus })
+        .eq('id', user.id)
+
+    if (error) {
+        // Kalau gagal simpan, balikin lagi tampilannya
+        setIsActive(!newStatus)
+        alert('Gagal update status bot. Cek koneksi.')
+    }
+  }
+
+  // ... (Sisa kode Broadcast sama seperti sebelumnya) ...
   const spinText = (text: string) => {
     return text.replace(/\{([^{}]+)\}/g, (match, content) => {
         const choices = content.split('|')
@@ -98,13 +116,12 @@ export default function Dashboard() {
     setIsSending(true)
     setLogs([])
     
-    // Pecah nomor dari koma
     const targets = broadcastTarget.split(',').map(t => t.trim()).filter(t => t)
     const total = targets.length
 
     for (let i = 0; i < total; i++) {
         const number = targets[i]
-        const uniqueMessage = spinText(broadcastMsg) // Acak kata
+        const uniqueMessage = spinText(broadcastMsg)
         
         setProgress(`Mengirim ke ${number} (${i + 1}/${total})...`)
 
@@ -112,11 +129,7 @@ export default function Dashboard() {
             const res = await fetch('/api/broadcast', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    token: token,
-                    target: number,
-                    message: uniqueMessage
-                })
+                body: JSON.stringify({ token, target: number, message: uniqueMessage })
             })
             
             const result = await res.json()
@@ -127,9 +140,8 @@ export default function Dashboard() {
             setLogs(prev => [`❌ ${number}: Error Sistem`, ...prev])
         }
 
-        // Jeda Waktu (Delay) Biar Aman
         if (i < total - 1) {
-            const delay = Math.floor(Math.random() * 3000) + 3000 // 3-6 detik
+            const delay = Math.floor(Math.random() * 3000) + 3000
             setProgress(`Menunggu ${delay/1000} detik biar aman...`)
             await new Promise(resolve => setTimeout(resolve, delay))
         }
@@ -140,9 +152,8 @@ export default function Dashboard() {
     alert('Selesai! Cek laporan di bawah.')
   }
 
-  if (loading) return <div className="min-h-screen flex justify-center items-center text-slate-500 font-mono">⏳ Memuat Dashboard BeeFirst...</div>
+  if (loading) return <div className="min-h-screen flex justify-center items-center text-slate-500 font-mono">⏳ Memuat Dashboard...</div>
 
-  // Styles Tailwind
   const inputStyle = "w-full border border-slate-300 bg-white text-slate-700 p-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none shadow-sm transition"
   const labelStyle = "block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wider"
   const cardStyle = "bg-white p-6 rounded-xl shadow-sm border border-slate-200"
@@ -166,10 +177,10 @@ export default function Dashboard() {
 
       <div className="max-w-7xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-12 gap-8">
         
-        {/* === SIDEBAR KIRI (Settings) === */}
+        {/* === SIDEBAR KIRI === */}
         <div className="lg:col-span-4 space-y-6">
             
-            {/* 1. STATISTIK KINERJA (BARU) 📊 */}
+            {/* STATISTIK */}
             <div className="bg-gradient-to-r from-blue-600 to-indigo-700 p-6 rounded-xl shadow-lg text-white transform hover:scale-[1.02] transition duration-300">
                 <div className="flex items-center gap-3 mb-2">
                     <div className="bg-white/20 p-2 rounded-lg text-xl">🚀</div>
@@ -184,7 +195,7 @@ export default function Dashboard() {
                 </div>
             </div>
 
-            {/* 2. SAKLAR BOT */}
+            {/* SAKLAR BOT (LOGIKA BARU DI SINI) */}
             <div className={`${cardStyle} border-l-4 ${isActive ? 'border-l-green-500' : 'border-l-red-500'}`}>
                 <div className="flex justify-between items-center mb-2">
                     <h2 className="font-bold text-lg">Status Bot</h2>
@@ -192,15 +203,17 @@ export default function Dashboard() {
                         {isActive ? 'AKTIF ●' : 'MATI ○'}
                     </div>
                 </div>
+                <p className="text-xs text-slate-500 mb-3">Klik tombol di bawah untuk menyalakan/mematikan bot secara instan.</p>
+                
                 <button 
-                    onClick={() => setIsActive(!isActive)}
-                    className={`w-full py-2 mt-2 rounded-lg font-bold text-white text-sm transition-all shadow-md ${isActive ? 'bg-red-500 hover:bg-red-600' : 'bg-green-600 hover:bg-green-700'}`}
+                    onClick={handleToggleBot} // <--- GANTI JADI INI
+                    className={`w-full py-2 rounded-lg font-bold text-white text-sm transition-all shadow-md transform active:scale-95 ${isActive ? 'bg-red-500 hover:bg-red-600' : 'bg-green-600 hover:bg-green-700'}`}
                 >
-                    {isActive ? 'Matikan Bot' : 'Hidupkan Bot'}
+                    {isActive ? 'Matikan Bot 📴' : 'Hidupkan Bot 🔛'}
                 </button>
             </div>
 
-            {/* 3. PROFIL TOKO */}
+            {/* PROFIL TOKO */}
             <div className={cardStyle}>
                 <h3 className="font-bold text-slate-800 mb-4 border-b pb-2 flex items-center gap-2">🏢 Profil Bisnis</h3>
                 <div className="space-y-4">
@@ -215,17 +228,17 @@ export default function Dashboard() {
                 </div>
             </div>
 
-             {/* 4. PERAN AI */}
+             {/* PERAN AI */}
              <div className={cardStyle}>
                 <h3 className="font-bold text-slate-800 mb-4 border-b pb-2 flex items-center gap-2">🎭 Karakter AI</h3>
-                <textarea rows={4} className={inputStyle} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Contoh: Kamu adalah CS Toko Sepatu yang ramah, sopan, dan suka menggunakan emoji..." />
+                <textarea rows={4} className={inputStyle} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Contoh: Kamu adalah CS Toko Sepatu yang ramah..." />
             </div>
         </div>
 
-        {/* === KONTEN KANAN (Knowledge Base & Tools) === */}
+        {/* === KONTEN KANAN === */}
         <div className="lg:col-span-8 space-y-6">
             
-            {/* 1. KNOWLEDGE BASE */}
+            {/* KNOWLEDGE BASE */}
             <div className={cardStyle}>
                 <div className="flex items-center gap-3 mb-6">
                     <div className="bg-blue-100 p-2 rounded-lg text-blue-600 text-xl">📚</div>
@@ -238,7 +251,7 @@ export default function Dashboard() {
                 <div className="space-y-4">
                     <div>
                         <label className={labelStyle}>📦 Daftar Produk & Harga</label>
-                        <textarea rows={5} className={`${inputStyle} font-mono text-sm`} value={products} onChange={(e) => setProducts(e.target.value)} placeholder="- Sepatu Nike: Rp 500rb&#10;- Kaos Polos: Rp 50rb (Stok banyak)" />
+                        <textarea rows={5} className={`${inputStyle} font-mono text-sm`} value={products} onChange={(e) => setProducts(e.target.value)} placeholder="- Sepatu Nike: Rp 500rb&#10;- Kaos Polos: Rp 50rb" />
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
@@ -247,7 +260,7 @@ export default function Dashboard() {
                         </div>
                         <div>
                             <label className={labelStyle}>ℹ️ FAQ / Lokasi</label>
-                            <textarea rows={3} className={inputStyle} value={faq} onChange={(e) => setFaq(e.target.value)} placeholder="Lokasi: Jl. Merdeka No. 10 Jakarta" />
+                            <textarea rows={3} className={inputStyle} value={faq} onChange={(e) => setFaq(e.target.value)} placeholder="Lokasi: Jl. Merdeka No. 10" />
                         </div>
                     </div>
                 </div>
@@ -258,66 +271,34 @@ export default function Dashboard() {
                 </div>
             </div>
 
-            {/* 2. SMART BROADCAST */}
+            {/* SMART BROADCAST */}
             <div className="bg-gradient-to-br from-indigo-600 to-purple-800 text-white p-6 rounded-xl shadow-lg border border-indigo-400/30">
                 <div className="flex items-center gap-3 mb-4">
                     <div className="bg-white/20 p-2 rounded-lg text-2xl">📡</div>
                     <div>
                         <h2 className="font-bold text-xl">Smart Broadcast</h2>
-                        <p className="text-indigo-100 text-xs">Fitur Anti-Banned dengan Spintax {'{Halo|Hai}'} & Delay Otomatis.</p>
+                        <p className="text-indigo-100 text-xs">Fitur Anti-Banned dengan Spintax & Delay Otomatis.</p>
                     </div>
                 </div>
-
+                {/* ... (Bagian form broadcast sama) ... */}
                 <div className="space-y-4">
                     <div>
-                        <label className="block text-xs font-bold text-indigo-200 mb-1 uppercase">Nomor Tujuan (Pisahkan Koma)</label>
-                        <input 
-                            type="text" 
-                            className="w-full bg-white/10 border border-white/20 text-white p-3 rounded-lg text-sm placeholder-indigo-300 outline-none focus:bg-white/20 transition" 
-                            placeholder="0812xxx, 0857xxx, 0811xxx" 
-                            value={broadcastTarget} 
-                            onChange={(e) => setBroadcastTarget(e.target.value)} 
-                            disabled={isSending} 
-                        />
+                        <label className="block text-xs font-bold text-indigo-200 mb-1 uppercase">Nomor Tujuan</label>
+                        <input type="text" className="w-full bg-white/10 border border-white/20 text-white p-3 rounded-lg text-sm outline-none focus:bg-white/20 transition" placeholder="0812xxx, 0857xxx" value={broadcastTarget} onChange={(e) => setBroadcastTarget(e.target.value)} disabled={isSending} />
                     </div>
                     <div>
-                        <label className="block text-xs font-bold text-indigo-200 mb-1 uppercase">Isi Pesan (Gunakan {'{...|...}'} untuk variasi)</label>
-                        <textarea 
-                            rows={3} 
-                            className="w-full bg-white/10 border border-white/20 text-white p-3 rounded-lg text-sm placeholder-indigo-300 outline-none focus:bg-white/20 transition" 
-                            placeholder="{Halo|Hai|Selamat Pagi} kak, kami ada {promo|diskon} baru khusus hari ini..." 
-                            value={broadcastMsg} 
-                            onChange={(e) => setBroadcastMsg(e.target.value)} 
-                            disabled={isSending} 
-                        />
+                        <label className="block text-xs font-bold text-indigo-200 mb-1 uppercase">Isi Pesan</label>
+                        <textarea rows={3} className="w-full bg-white/10 border border-white/20 text-white p-3 rounded-lg text-sm outline-none focus:bg-white/20 transition" placeholder="{Halo|Hai} kak..." value={broadcastMsg} onChange={(e) => setBroadcastMsg(e.target.value)} disabled={isSending} />
                     </div>
-                    
-                    {/* Progress Bar */}
-                    {isSending && (
-                        <div className="bg-black/30 p-3 rounded-lg text-sm font-mono text-yellow-300 animate-pulse border border-yellow-500/30">
-                            ⏳ {progress}
-                        </div>
-                    )}
-
-                    <div className="flex justify-between items-center pt-2">
-                        <div className="text-xs text-indigo-200 opacity-80">
-                           💡 Tips: Gunakan spintax agar pesan bervariasi.
-                        </div>
-                        <button 
-                            onClick={handleSmartBroadcast} 
-                            disabled={isSending} 
-                            className="bg-white text-indigo-700 px-6 py-2.5 rounded-lg font-bold hover:bg-indigo-50 transition shadow-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
+                    {isSending && <div className="bg-black/30 p-3 rounded-lg text-sm font-mono text-yellow-300 animate-pulse border border-yellow-500/30">⏳ {progress}</div>}
+                    <div className="flex justify-end pt-2">
+                        <button onClick={handleSmartBroadcast} disabled={isSending} className="bg-white text-indigo-700 px-6 py-2.5 rounded-lg font-bold hover:bg-indigo-50 transition shadow-lg flex items-center gap-2 disabled:opacity-50">
                             {isSending ? 'Sedang Mengirim... 🚀' : 'Mulai Broadcast 📨'}
                         </button>
                     </div>
-
-                    {/* Log Pengiriman */}
                     {logs.length > 0 && (
                         <div className="mt-4 bg-black/40 p-3 rounded-lg max-h-32 overflow-y-auto text-xs font-mono space-y-1 border border-white/10 custom-scrollbar">
-                            {logs.map((log, idx) => (
-                                <div key={idx} className="text-white/90 border-b border-white/5 pb-1 last:border-0">{log}</div>
-                            ))}
+                            {logs.map((log, idx) => <div key={idx} className="text-white/90 border-b border-white/5 pb-1 last:border-0">{log}</div>)}
                         </div>
                     )}
                 </div>
