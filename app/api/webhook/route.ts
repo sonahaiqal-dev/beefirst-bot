@@ -4,13 +4,12 @@ import Groq from 'groq-sdk'
 
 // --- 1. SETUP KONEKSI ---
 
-// Supabase (Pakai Service Role Key biar bisa baca database tanpa login)
+// Supabase
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 const supabase = createClient(supabaseUrl, supabaseKey)
 
-// Groq AI (Pastikan API Key sudah ada di Vercel)
-// Tambah || "" biar gak error saat build kalau env belum kebaca
+// Groq AI (Handle jika key kosong biar build gak error)
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || "" })
 
 export async function POST(request: Request) {
@@ -21,7 +20,6 @@ export async function POST(request: Request) {
     
     // --- 2. CEK IDENTITAS (TOKEN) ---
     
-    // Prioritas: Ambil token dari URL dulu, kalau gak ada ambil dari body device
     const { searchParams } = new URL(request.url)
     let token = searchParams.get('token') || device
 
@@ -32,10 +30,17 @@ export async function POST(request: Request) {
       .eq('fonnte_token', token)
       .single()
 
-    // Kalau token tidak dikenal
+    // A. Kalau token tidak dikenal
     if (!userProfile) {
-      console.log(`❌ Token ${token} tidak ditemukan.`)
+      console.log(`❌ Token ${token} tidak ditemukan di database.`)
       return NextResponse.json({ status: 'unknown_device' })
+    }
+
+    // B. CEK SAKLAR ON/OFF (FITUR BARU) 🔕
+    // Jika user set is_active = false, bot tidur.
+    if (userProfile.is_active === false) {
+        console.log(`🔕 Bot dinonaktifkan oleh user ${userProfile.email}. Mengabaikan pesan.`)
+        return NextResponse.json({ status: 'bot_disabled_by_user' })
     }
 
     // --- 3. CEK MASA AKTIF TRIAL ---
@@ -43,7 +48,6 @@ export async function POST(request: Request) {
     const today = new Date()
     const expiryDate = new Date(userProfile.trial_ends_at)
 
-    // Kalau trial habis
     if (today > expiryDate && userProfile.subscription_status === 'trial') {
         console.log('⛔ Masa Trial Habis.')
         await fetch('https://api.fonnte.com/send', {
@@ -51,7 +55,7 @@ export async function POST(request: Request) {
             headers: { Authorization: token!, 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 target: sender,
-                message: "Mohon maaf, masa trial Bot BeeFirst Anda sudah habis. Silakan hubungi owner untuk upgrade ke Premium."
+                message: "Masa trial Bot BeeFirst Anda sudah habis. Silakan hubungi owner untuk upgrade."
             })
         })
         return NextResponse.json({ status: 'trial_expired' })
@@ -59,22 +63,21 @@ export async function POST(request: Request) {
 
     // --- 4. FILTER PESAN ---
     
-    // Jangan balas status WA sendiri atau pesan kosong
+    // Jangan balas status WA atau pesan kosong
     if (sender === 'status' || !message) return NextResponse.json({ status: 'ignored' })
 
-    // --- 5. LOGIKA AI PINTAR (KNOWLEDGE BASE) ---
+    // --- 5. OTAK AI (KNOWLEDGE BASE) ---
 
     console.log(`🧠 AI memproses pesan dari ${sender}...`)
 
-    // A. Ambil Data Kepribadian & Pengetahuan dari Database
-    const customPrompt = userProfile.system_prompt || "Kamu adalah asisten AI yang ramah dan membantu."
+    // Ambil Data Profil & Knowledge Base
+    const customPrompt = userProfile.system_prompt || "Kamu adalah asisten AI yang ramah."
     
-    // Ambil 3 Kolom Data Toko (Default kosong jika user belum isi)
-    const productData = userProfile.kb_products || "Belum ada informasi produk."
-    const hoursData = userProfile.kb_hours || "Belum ada informasi jam buka."
-    const faqData = userProfile.kb_faq || "Belum ada informasi tambahan."
+    const productData = userProfile.kb_products || "Belum ada info produk."
+    const hoursData = userProfile.kb_hours || "Belum ada info jam buka."
+    const faqData = userProfile.kb_faq || "Belum ada info tambahan."
 
-    // B. Gabungkan Data Jadi Satu Teks Rapi
+    // Gabungkan Data
     const knowledgeContext = `
     === DAFTAR PRODUK & HARGA ===
     ${productData}
@@ -82,44 +85,40 @@ export async function POST(request: Request) {
     === JAM OPERASIONAL ===
     ${hoursData}
 
-    === INFORMASI LAINNYA (FAQ/LOKASI/WIFI) ===
+    === INFO LAINNYA (FAQ/LOKASI) ===
     ${faqData}
     `
 
-    // C. Rakit Prompt Final untuk AI
+    // Rakit Prompt Final
     const finalSystemPrompt = `
-      PERAN & KEPRIBADIAN:
+      PERAN & IDENTITAS:
       ${customPrompt}
 
-      DATA FAKTA TOKO (SUMBER KEBENARAN UTAMA):
-      Gunakan data di bawah ini untuk menjawab pertanyaan pelanggan.
-      
-      ATURAN PENTING:
-      1. Jika user tanya harga/produk, LIHAT DATA PRODUK. Jangan ngarang harga sendiri.
-      2. Jika user tanya jam buka, LIHAT DATA JAM OPERASIONAL.
-      3. Jika informasi tidak ada di data ini, jawab jujur: "Mohon maaf, untuk info tersebut saya belum tau. Silakan hubungi admin langsung ya."
-      4. Jawablah dengan singkat, ramah, dan to-the-point.
+      DATA TOKO (SUMBER KEBENARAN):
+      Gunakan data di bawah ini untuk menjawab user.
+      1. Jika tanya harga/stok, WAJIB lihat data 'PRODUK & HARGA'. Jangan mengarang.
+      2. Jika tanya buka jam berapa, lihat 'JAM OPERASIONAL'.
+      3. Jika data tidak ada, jawab jujur bahwa kamu tidak tahu.
 
-      === MULAI DATA TOKO ===
+      === MULAI DATA ===
       ${knowledgeContext}
-      === AKHIR DATA TOKO ===
+      === AKHIR DATA ===
     `
 
-    // D. Panggil Groq AI (Model Terbaru)
+    // Panggil AI
     const chatCompletion = await groq.chat.completions.create({
       messages: [
         { role: "system", content: finalSystemPrompt },
         { role: "user", content: message }
       ],
-      model: "llama-3.3-70b-versatile", // Model paling pinter & cepat
-      temperature: 0.5, // 0.5 artinya seimbang (kreatif tapi patuh data)
+      model: "llama-3.3-70b-versatile",
+      temperature: 0.5,
       max_tokens: 600,
     })
 
-    // Ambil jawaban dari AI
-    const aiResponse = chatCompletion.choices[0]?.message?.content || "Maaf, AI sedang gangguan sebentar. Coba lagi nanti."
+    const aiResponse = chatCompletion.choices[0]?.message?.content || "Maaf, AI sedang sibuk."
 
-    // --- 6. KIRIM BALASAN KE WHATSAPP ---
+    // --- 6. KIRIM BALASAN ---
     
     await fetch('https://api.fonnte.com/send', {
       method: 'POST',
@@ -142,7 +141,6 @@ export async function POST(request: Request) {
   }
 }
 
-// Endpoint GET buat cek status server
 export async function GET() {
-  return NextResponse.json({ status: 'BeeFirst Knowledge Brain Ready 🧠📚' })
+  return NextResponse.json({ status: 'BeeFirst Ultimate Brain Ready 🧠✨' })
 }
