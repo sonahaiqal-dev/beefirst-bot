@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-// Setup Supabase dengan Service Role Key (Wajib untuk akses Admin)
+// Setup Supabase dengan Service Role Key (Wajib untuk akses Admin/Delete User)
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -48,7 +48,7 @@ export async function POST(request: Request) {
        return NextResponse.json({ success: true })
     }
 
-    // 4. UPDATE TOKEN (LOGIKA BARU)
+    // 4. Update Token Manual
     if (action === 'update_token') {
         const { error } = await supabase
             .from('profiles')
@@ -56,6 +56,21 @@ export async function POST(request: Request) {
             .eq('id', targetId)
         
         if (error) throw error
+        return NextResponse.json({ success: true })
+    }
+
+    // 5. DELETE USER PERMANEN (FITUR BARU 🗑️)
+    if (action === 'delete_user') {
+        // Menghapus user dari Auth Supabase (Data di tabel profiles biasanya ikut terhapus jika settingan db cascade, 
+        // tapi menghapus Auth adalah cara paling bersih).
+        const { error } = await supabase.auth.admin.deleteUser(targetId)
+        
+        if (error) {
+            // Jika gagal hapus auth (misal user belum verified), coba paksa hapus profilnya saja
+            console.error("Gagal hapus Auth, mencoba hapus profil...", error)
+            await supabase.from('profiles').delete().eq('id', targetId)
+        }
+        
         return NextResponse.json({ success: true })
     }
 

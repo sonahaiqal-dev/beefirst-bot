@@ -14,7 +14,6 @@ export default function AdminPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
       
-      // Cek apakah user ini admin?
       const { data: profile } = await supabase
         .from('profiles')
         .select('is_admin')
@@ -59,7 +58,7 @@ export default function AdminPage() {
   }
 
   const handleBan = async (targetId: string, currentStatus: boolean) => {
-    const msg = currentStatus ? "Buka Blokir user ini?" : "⚠️ BANNED user ini?"
+    const msg = currentStatus ? "Buka Blokir user ini?" : "⚠️ BANNED user ini? Bot dia akan mati total."
     if(!confirm(msg)) return
     await fetch('/api/admin', {
       method: 'POST',
@@ -69,11 +68,8 @@ export default function AdminPage() {
     fetchUsers(currentUser.id)
   }
 
-  // === FUNGSI SET TOKEN MANUAL ===
   const handleSetToken = async (targetId: string, currentToken: string) => {
     const newToken = prompt("Masukkan Token Fonnte untuk User ini:", currentToken || "")
-    
-    // Kalau user klik Cancel atau kosongin input
     if (newToken === null) return 
     
     await fetch('/api/admin', {
@@ -88,6 +84,36 @@ export default function AdminPage() {
     })
     alert("✅ Token berhasil disimpan!")
     fetchUsers(currentUser.id)
+  }
+
+  // === FITUR BARU: HAPUS USER ===
+  const handleDeleteUser = async (targetId: string, email: string) => {
+    const confirmMsg = `⚠️ BAHAYA! \n\nAnda yakin ingin MENGHAPUS PERMANEN user ${email}?\nData tidak bisa dikembalikan!`
+    if (!confirm(confirmMsg)) return
+
+    // Double confirm biar gak salah pencet
+    if (!confirm("Yakin 100% mau hapus?")) return
+
+    try {
+        const res = await fetch('/api/admin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                action: 'delete_user', 
+                userId: currentUser.id, 
+                targetId: targetId
+            })
+        })
+        
+        if (res.ok) {
+            alert("✅ User berhasil dihapus dari muka bumi.")
+            fetchUsers(currentUser.id) // Refresh tabel
+        } else {
+            alert("Gagal menghapus user.")
+        }
+    } catch (err) {
+        alert("Terjadi kesalahan sistem.")
+    }
   }
 
   const handleLogout = async () => {
@@ -109,7 +135,7 @@ export default function AdminPage() {
           </div>
           <div className="flex gap-3">
             <button onClick={() => router.push('/dashboard')} className="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded text-sm transition border border-gray-700">
-              Lihat Dashboard Saya
+              Dashboard Saya
             </button>
             <button onClick={handleLogout} className="bg-red-900/30 hover:bg-red-900/60 text-red-200 px-4 py-2 rounded text-sm transition border border-red-900">
               Keluar
@@ -125,54 +151,70 @@ export default function AdminPage() {
                 <tr>
                   <th className="px-6 py-4">User & Toko</th>
                   <th className="px-6 py-4">Koneksi WA</th>
-                  <th className="px-6 py-4">Langganan</th>
-                  <th className="px-6 py-4 text-center">Aksi</th>
+                  <th className="px-6 py-4">Status & Paket</th>
+                  <th className="px-6 py-4 text-center">Aksi (Manajemen)</th>
+                  <th className="px-6 py-4 text-center">Zona Bahaya</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800">
                 {users.map((user) => (
                   <tr key={user.id} className="hover:bg-gray-800/50 transition duration-150">
                     
-                    {/* KOLOM 1: INFO USER */}
+                    {/* 1. INFO USER */}
                     <td className="px-6 py-4">
                       <div className="font-medium text-white">{user.email}</div>
-                      <div className="text-xs text-gray-500 mt-1">{user.store_name || '(Belum set nama)'}</div>
-                      {user.is_banned && <span className="text-red-500 text-[10px] font-bold border border-red-900 px-1 rounded mt-1 inline-block">BANNED</span>}
+                      <div className="text-xs text-gray-500 mt-1">{user.store_name || '-'}</div>
+                      <div className="text-[10px] text-gray-600 mt-1 font-mono">{user.whatsapp || 'No WA'}</div>
                     </td>
 
-                    {/* KOLOM 2: TOKEN & KONEKSI */}
+                    {/* 2. TOKEN */}
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2 mb-2">
-                        <div className={`w-2 h-2 rounded-full ${user.fonnte_token ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500'}`}></div>
-                        <span className="text-xs font-mono">{user.fonnte_token ? 'Terhubung' : 'Token Kosong'}</span>
+                        <div className={`w-2 h-2 rounded-full ${user.fonnte_token ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                        <span className="text-xs font-mono">{user.fonnte_token ? 'Connected' : 'Kosong'}</span>
                       </div>
-                      
-                      {/* TOMBOL INPUT TOKEN (INITI BARU) */}
                       <button 
                         onClick={() => handleSetToken(user.id, user.fonnte_token)}
-                        className="text-[10px] bg-gray-800 hover:bg-blue-900 hover:text-blue-100 text-gray-300 px-3 py-1.5 rounded border border-gray-700 hover:border-blue-500 transition flex items-center gap-1 w-full justify-center"
+                        className="text-[10px] bg-gray-800 hover:bg-blue-900 hover:text-blue-100 text-gray-300 px-3 py-1.5 rounded border border-gray-700 hover:border-blue-500 transition w-full"
                       >
-                        🔑 {user.fonnte_token ? 'Ganti Token' : 'Input Token'}
+                        🔑 {user.fonnte_token ? 'Ganti' : 'Isi Token'}
                       </button>
                     </td>
 
-                    {/* KOLOM 3: SUBSCRIPTION */}
+                    {/* 3. STATUS */}
                     <td className="px-6 py-4">
-                      <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wide ${
-                        user.subscription_status === 'premium' ? 'bg-blue-900/50 text-blue-300 border border-blue-800' : 'bg-yellow-900/30 text-yellow-500 border border-yellow-900'
-                      }`}>
-                        {user.subscription_status}
-                      </span>
+                       <div className="flex flex-col gap-1">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase w-fit ${
+                            user.subscription_status === 'premium' ? 'bg-blue-900/50 text-blue-300 border border-blue-800' : 'bg-yellow-900/30 text-yellow-500 border border-yellow-900'
+                          }`}>
+                            {user.subscription_status}
+                          </span>
+                          {user.is_banned && <span className="text-red-500 text-[10px] font-bold">🚫 BANNED</span>}
+                       </div>
                     </td>
 
-                    {/* KOLOM 4: ACTIONS */}
-                    <td className="px-6 py-4 text-center space-x-3">
-                        <button onClick={() => handleSubscription(user.id, user.subscription_status === 'premium' ? 'trial' : 'premium')} className="text-xs text-blue-400 hover:text-white transition decoration-blue-500/30 underline underline-offset-4">
-                            {user.subscription_status === 'premium' ? 'Downgrade' : 'Upgrade'}
-                        </button>
-                        
-                        <button onClick={() => handleBan(user.id, user.is_banned)} className="text-xs text-red-500 hover:text-red-300 transition decoration-red-500/30 underline underline-offset-4">
-                            {user.is_banned ? 'Buka Blokir' : 'Blokir User'}
+                    {/* 4. AKSI STANDAR */}
+                    <td className="px-6 py-4 text-center space-y-2">
+                        <div className="flex justify-center gap-2">
+                            <button onClick={() => handleSubscription(user.id, user.subscription_status === 'premium' ? 'trial' : 'premium')} className="text-[10px] border border-gray-700 hover:bg-gray-700 px-2 py-1 rounded">
+                                {user.subscription_status === 'premium' ? '⬇️ Downgrade' : '⬆️ Upgrade'}
+                            </button>
+                        </div>
+                        <div className="flex justify-center gap-2">
+                            <button onClick={() => handleBan(user.id, user.is_banned)} className="text-[10px] border border-gray-700 hover:bg-gray-700 px-2 py-1 rounded text-red-400">
+                                {user.is_banned ? '🔓 Buka Blokir' : '🚫 Blokir'}
+                            </button>
+                        </div>
+                    </td>
+
+                    {/* 5. ZONA BAHAYA (HAPUS) */}
+                    <td className="px-6 py-4 text-center">
+                        <button 
+                            onClick={() => handleDeleteUser(user.id, user.email)} 
+                            className="bg-red-900/20 hover:bg-red-600 text-red-500 hover:text-white p-2 rounded transition border border-red-900/50"
+                            title="Hapus Permanen"
+                        >
+                            🗑️
                         </button>
                     </td>
 
@@ -180,10 +222,6 @@ export default function AdminPage() {
                 ))}
               </tbody>
             </table>
-            
-            {users.length === 0 && (
-                <div className="p-8 text-center text-gray-600 italic">Belum ada user yang mendaftar.</div>
-            )}
           </div>
         </div>
 
